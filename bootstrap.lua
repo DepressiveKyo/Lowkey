@@ -205,8 +205,6 @@ local function NeedsDownload(entry)
     return false
 end
 
-local Downloaded = {}
-
 local function VerifyEntry(entry, full)
     local path = LocalPathOf(entry)
     local size = FileSize(path)
@@ -221,7 +219,7 @@ end
 
 local function RunEntry(name, entry)
     local path = LocalPathOf(entry)
-    local ok, reason = VerifyEntry(entry, Downloaded[name] == true)
+    local ok, reason = VerifyEntry(entry, false)
     if not ok then
         Lowkey.failed[name] = reason
         print("[Lowkey] " .. name .. " rejected: " .. reason)
@@ -273,61 +271,78 @@ local function LoadAll()
         REPO, tostring(manifest.version or "?"), count, bad))
 end
 
-local function FetchScripts()
-    local manifest = Lowkey.manifest
-    local queued = 0
+local Staged = 0
+
+local function VerifyStaged(name, entry)
+    local ok, reason = VerifyEntry(entry, true)
+    if ok then
+        Staged = Staged + 1
+        return
+    end
+    print("[Lowkey] discarded bad download for " .. name .. ": " .. reason)
+    os.remove(LocalPathOf(entry))
+end
+
+local function FetchUpdates()
+    local manifest = Lowkey.remote
+    if not manifest then return end
     for name, entry in pairs(manifest.scripts) do
         if WantsThisChampion(entry) and NeedsDownload(entry) then
-            queued = queued + 1
-            Downloaded[name] = true
-            Download(BASE_URL .. entry.file, LocalPathOf(entry))
+            Download(BASE_URL .. entry.file, LocalPathOf(entry), function()
+                VerifyStaged(name, entry)
+            end)
         end
     end
-    if queued > 0 then
-        print("[Lowkey] downloading " .. queued .. " file(s)")
-    end
-    Lowkey.state = "waiting"
 end
 
 local function AfterManifest()
     local manifest, reason = ParseManifest()
     if not manifest then
-        print("[Lowkey] manifest unusable: " .. tostring(reason))
-        Lowkey.state = "error"
+        print("[Lowkey] update check failed: " .. tostring(reason))
         return
     end
-    Lowkey.manifest = manifest
-    FetchScripts()
+    Lowkey.remote = manifest
+    FetchUpdates()
 end
 
-local function Start()
-    if AUTO_UPDATE then
-        Download(MANIFEST_URL, MANIFEST_LOCAL, AfterManifest)
-    else
-        AfterManifest()
+local function LoadFromDisk()
+    local manifest, reason = ParseManifest()
+    if not manifest then
+        print("[Lowkey] no local manifest yet (" .. tostring(reason) .. "), fetching")
+        return false
     end
+    Lowkey.manifest = manifest
+    LoadAll()
+    return true
 end
 
+local reported = false
 local ticks = 0
 
 local function OnTick()
-    if Lowkey.state == "ready" or Lowkey.state == "error" then
+    if reported then
         Callback.Del("Tick", OnTick)
         return
     end
-    if pending > 0 then return end
-    if Lowkey.state == "waiting" and Lowkey.manifest then
-        LoadAll()
+    if pending > 0 then
+        ticks = ticks + 1
+        if ticks > 1800 then
+            reported = true
+            print("[Lowkey] downloads timed out")
+        end
         return
     end
-    ticks = ticks + 1
-    if ticks > 600 then
-        print("[Lowkey] timed out waiting for downloads")
-        Lowkey.state = "error"
+    reported = true
+    if Staged > 0 then
+        print(format("[Lowkey] %d file(s) updated, restart GoS to load them", Staged))
     end
 end
 
-Callback.Add("Tick", OnTick)
-Start()
+LoadFromDisk()
+
+if AUTO_UPDATE then
+    Callback.Add("Tick", OnTick)
+    Download(MANIFEST_URL, MANIFEST_LOCAL, AfterManifest)
+end
 
 return Lowkey
