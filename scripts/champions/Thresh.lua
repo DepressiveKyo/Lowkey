@@ -5,8 +5,7 @@ if myHero.charName ~= "Thresh" then return end
 local VERSION = "1.0"
 local SCRIPT_NAME = "Lowkey Thresh"
 
-pcall(function() require("GGPrediction") end)
-local GGOK = _G.GGPrediction ~= nil
+local PredTries = 0
 
 local math_sqrt = math.sqrt
 local math_max = math.max
@@ -185,8 +184,20 @@ local function IsAttacking()
 end
 
 local function InitPred()
-    if not GGOK or PredQ then return end
+    if PredQ or PredTries > 600 then return end
     local gg = _G.GGPrediction
+    if not gg then
+        PredTries = PredTries + 1
+        pcall(function() require("GGPrediction") end)
+        gg = _G.GGPrediction
+        if not gg then
+            if PredTries == 600 then
+                print("[" .. SCRIPT_NAME .. "] GGPrediction unavailable, casting without prediction")
+            end
+            return
+        end
+        print("[" .. SCRIPT_NAME .. "] prediction ready after " .. PredTries .. " tries")
+    end
     PredQ = gg:SpellPrediction({
         Type = gg.SPELLTYPE_LINE, Delay = Q_DELAY, Radius = Q_RADIUS,
         Range = Q_RANGE, Speed = Q_SPEED, Collision = true, MaxCollision = 0,
@@ -654,4 +665,5 @@ end
 Callback.Add("Tick", OnTick)
 Callback.Add("Draw", OnDraw)
 
-print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred " .. ((PredQ and "on") or "off"))
+InitPred()
+print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred " .. ((PredQ and "on") or "retrying"))

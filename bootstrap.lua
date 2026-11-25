@@ -305,6 +305,11 @@ local function AfterManifest()
     FetchUpdates()
 end
 
+local function PreloadShared()
+    if _G.GGPrediction then return end
+    pcall(function() require("GGPrediction") end)
+end
+
 local function LoadFromDisk()
     local manifest, reason = ParseManifest()
     if not manifest then
@@ -312,6 +317,7 @@ local function LoadFromDisk()
         return false
     end
     Lowkey.manifest = manifest
+    PreloadShared()
     LoadAll()
     return true
 end
