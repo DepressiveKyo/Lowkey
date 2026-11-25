@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -184,19 +184,17 @@ local function IsAttacking()
 end
 
 local function InitPred()
-    if PredQ or PredTries > 600 then return end
+    if PredQ then return end
     local gg = _G.GGPrediction
     if not gg then
         PredTries = PredTries + 1
-        pcall(function() require("GGPrediction") end)
-        gg = _G.GGPrediction
-        if not gg then
-            if PredTries == 600 then
-                print("[" .. SCRIPT_NAME .. "] GGPrediction unavailable, casting without prediction")
-            end
-            return
+        if PredTries == 300 then
+            print("[" .. SCRIPT_NAME .. "] GGPrediction unavailable, casting without prediction")
         end
-        print("[" .. SCRIPT_NAME .. "] prediction ready after " .. PredTries .. " tries")
+        return
+    end
+    if PredTries > 0 then
+        print("[" .. SCRIPT_NAME .. "] prediction ready after " .. PredTries .. " ticks")
     end
     PredQ = gg:SpellPrediction({
         Type = gg.SPELLTYPE_LINE, Delay = Q_DELAY, Radius = Q_RADIUS,
@@ -509,8 +507,8 @@ local function AutoE()
     if autoE.interrupt:Value() then
         for i = 1, EHn do
             if EHd2[i] <= E_RANGE2 then
-                local u = EHo[i]
-                if u.isChanneling then
+                local act = EHo[i].activeSpell
+                if act and act.valid and not act.isStopped and act.isChanneling then
                     if CastE(i, false) then return true end
                 end
             end
@@ -666,4 +664,4 @@ Callback.Add("Tick", OnTick)
 Callback.Add("Draw", OnDraw)
 
 InitPred()
-print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred " .. ((PredQ and "on") or "retrying"))
+print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred " .. ((PredQ and "on") or "waiting"))

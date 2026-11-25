@@ -252,23 +252,32 @@ local function SortedNames(scripts)
     return names
 end
 
+local SharedState = "pending"
+local PreloadShared
+
 local function LoadAll()
     local manifest = Lowkey.manifest
     local names = SortedNames(manifest.scripts)
     local count = 0
+    local shared = false
     for i = 1, #names do
         local name = names[i]
         local entry = manifest.scripts[name]
+        if not shared and (entry.order or 100) >= 100 then
+            shared = true
+            PreloadShared()
+        end
         if WantsThisChampion(entry) then
             RunEntry(name, entry)
             if Lowkey.loaded[name] then count = count + 1 end
         end
     end
+    if not shared then PreloadShared() end
     local bad = 0
     for _ in pairs(Lowkey.failed) do bad = bad + 1 end
     Lowkey.state = "ready"
-    print(format("[Lowkey] %s@%s ready | %d loaded | %d failed",
-        REPO, tostring(manifest.version or "?"), count, bad))
+    print(format("[Lowkey] %s@%s ready | %d loaded | %d failed | pred %s",
+        REPO, tostring(manifest.version or "?"), count, bad, SharedState))
 end
 
 local Staged = 0
@@ -305,9 +314,29 @@ local function AfterManifest()
     FetchUpdates()
 end
 
-local function PreloadShared()
-    if _G.GGPrediction then return end
-    pcall(function() require("GGPrediction") end)
+function PreloadShared()
+    if _G.GGPrediction then
+        SharedState = "already loaded"
+        return
+    end
+    local ok, why = pcall(require, "GGPrediction")
+    if _G.GGPrediction then
+        SharedState = "on"
+        return
+    end
+    local failure = (not ok and tostring(why)) or "require returned without setting the global"
+    local path = LOCAL_ROOT:gsub("Lowkey/$", "") .. "GGPrediction.lua"
+    local chunk, reason = loadfile(path)
+    if not chunk then
+        SharedState = "off (" .. failure .. " | " .. tostring(reason) .. ")"
+        return
+    end
+    local ran, err = pcall(chunk)
+    if _G.GGPrediction then
+        SharedState = "on via loadfile"
+        return
+    end
+    SharedState = "off (" .. failure .. " | " .. tostring((not ran and err) or "loadfile set no global") .. ")"
 end
 
 local function LoadFromDisk()
@@ -317,7 +346,6 @@ local function LoadFromDisk()
         return false
     end
     Lowkey.manifest = manifest
-    PreloadShared()
     LoadAll()
     return true
 end
