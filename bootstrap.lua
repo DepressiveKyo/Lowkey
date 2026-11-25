@@ -205,21 +205,23 @@ local function NeedsDownload(entry)
     return false
 end
 
-local function VerifyEntry(entry)
+local Downloaded = {}
+
+local function VerifyEntry(entry, full)
     local path = LocalPathOf(entry)
-    local body = ReadFile(path, (entry.bytes or MANIFEST_LIMIT) + 1)
-    if not body then return false, "missing" end
-    if entry.bytes and #body ~= entry.bytes then return false, "size mismatch" end
-    if entry.sha256 then
-        local digest = Sha256(body)
-        if digest ~= entry.sha256 then return false, "hash mismatch" end
-    end
+    local size = FileSize(path)
+    if size == nil then return false, "missing" end
+    if entry.bytes and size ~= entry.bytes then return false, "size mismatch" end
+    if not full or not entry.sha256 then return true end
+    local body = ReadFile(path, size + 1)
+    if not body then return false, "unreadable" end
+    if Sha256(body) ~= entry.sha256 then return false, "hash mismatch" end
     return true
 end
 
 local function RunEntry(name, entry)
     local path = LocalPathOf(entry)
-    local ok, reason = VerifyEntry(entry)
+    local ok, reason = VerifyEntry(entry, Downloaded[name] == true)
     if not ok then
         Lowkey.failed[name] = reason
         print("[Lowkey] " .. name .. " rejected: " .. reason)
@@ -274,9 +276,10 @@ end
 local function FetchScripts()
     local manifest = Lowkey.manifest
     local queued = 0
-    for _, entry in pairs(manifest.scripts) do
+    for name, entry in pairs(manifest.scripts) do
         if WantsThisChampion(entry) and NeedsDownload(entry) then
             queued = queued + 1
+            Downloaded[name] = true
             Download(BASE_URL .. entry.file, LocalPathOf(entry))
         end
     end
