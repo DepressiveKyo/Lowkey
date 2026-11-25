@@ -118,6 +118,7 @@ Menu.pred:MenuElement({ id = "eHit", name = "E Hit Chance", value = 1, drop = { 
 
 Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
 Menu.combo:MenuElement({ id = "useQ", name = "Use Q (hook)", value = true })
+Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 50, min = 0, max = 250, step = 10 })
 Menu.combo:MenuElement({ id = "useE", name = "Use E (flay)", value = true })
 Menu.combo:MenuElement({ id = "ePull", name = "E pulls toward me", value = true })
 Menu.combo:MenuElement({ id = "useR", name = "Use R (box)", value = true })
@@ -397,11 +398,19 @@ local function PredictAt(pred, i, want, range2)
     return cp.x, cp.z
 end
 
+local function QCastRange()
+    local r = Q_RANGE - Menu.combo.qSafety:Value()
+    if r < 200 then r = 200 end
+    return r
+end
+
 local function CastQ(i)
     if i == 0 or not S.qR or SentTick[SQ] == TICK or S.attacking then return false end
-    if EHd2[i] > Q_RANGE2 then return false end
-    local lim = Q_RANGE + 20
-    local x, z = PredictAt(PredQ, i, HitOf(Menu.pred.qHit:Value()), lim * lim)
+    local cast = QCastRange()
+    local cast2 = cast * cast
+    if EHd2[i] > cast2 then return false end
+    if PredQ then PredQ.Range = cast end
+    local x, z = PredictAt(PredQ, i, HitOf(Menu.pred.qHit:Value()), cast2)
     if not x then return false end
     return Send(HK_Q, SQ, x, z)
 end
@@ -614,7 +623,7 @@ local function OnDraw()
     if draw.panel:Value() then DrawPanel() end
     if not myHero.visible then return end
     local pos = myHero.pos
-    if draw.qRange:Value() then DrawCircle(pos, Q_RANGE, 1, COL_Q) end
+    if draw.qRange:Value() then DrawCircle(pos, Q_RANGE - Menu.combo.qSafety:Value(), 1, COL_Q) end
     if draw.wRange:Value() then DrawCircle(pos, W_RANGE, 1, COL_W) end
     if draw.eRange:Value() then DrawCircle(pos, E_RANGE, 1, COL_E) end
     if draw.rRange:Value() then DrawCircle(pos, R_RADIUS, 1, COL_R) end
