@@ -57,7 +57,7 @@ function Find-GosRoots {
         if ($found.Count -gt 0) { break }
     }
 
-    return @($found | Select-Object -Unique)
+    return ,@($found | Select-Object -Unique)
 }
 
 function Get-Remote($relative, $destination) {
@@ -119,7 +119,7 @@ if ($Path) {
     }
 } else {
     Write-Step "buscando GamingOnSteroids..."
-    $hits = Find-GosRoots
+    $hits = @(Find-GosRoots)
     if ($hits.Count -eq 0) {
         Write-Bad "no lo he encontrado"
         Write-Host ""
@@ -143,6 +143,12 @@ if ($Path) {
         $root = $hits[$n - 1]
     }
 }
+
+if (-not (Test-GosRoot $root)) {
+    Write-Bad "ruta invalida tras la deteccion: $root"
+    return
+}
+$root = (Resolve-Path -LiteralPath $root).Path
 
 Write-Good "GamingOnSteroids: $root"
 
