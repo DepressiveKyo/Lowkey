@@ -117,7 +117,7 @@ Menu.pred:MenuElement({ id = "eHit", name = "E Hit Chance", value = 1, drop = { 
 
 Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
 Menu.combo:MenuElement({ id = "useQ", name = "Use Q (hook)", value = true })
-Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 50, min = 0, max = 250, step = 10 })
+Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 100, min = 0, max = 250, step = 10 })
 Menu.combo:MenuElement({ id = "useE", name = "Use E (flay)", value = true })
 Menu.combo:MenuElement({ id = "ePull", name = "E pulls toward me", value = true })
 Menu.combo:MenuElement({ id = "useR", name = "Use R (box)", value = true })
