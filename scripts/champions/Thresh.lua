@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.7"
+local VERSION = "1.8"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -45,7 +45,6 @@ local R_DELAY = 0.45
 local LEAP_HOLD = 0.4
 local HOOK_MARK = 1.5
 local FLASH_RANGE = 400
-local FLASH_LEAD = 0.15
 local FLASH_MOVED2 = 200 * 200
 local FLASH_NAMES = { ["SummonerFlash"] = true, ["SummonerFlash_Jade"] = true }
 
@@ -135,7 +134,6 @@ Menu.combo:MenuElement({ id = "rCount", name = "R if enemies inside >=", value =
 
 Menu:MenuElement({ type = MENU, id = "flashQ", name = "Flash Q" })
 Menu.flashQ:MenuElement({ id = "key", name = "Hold key", key = string.byte("T") })
-Menu.flashQ:MenuElement({ id = "order", name = "Order", value = 2, drop = { "Q then Flash", "Flash then Q" } })
 Menu.flashQ:MenuElement({ id = "hit", name = "Min hit chance", value = 2, drop = { "Normal", "High", "Immobile" } })
 Menu.flashQ:MenuElement({ id = "onlyOut", name = "Only out of normal Q range", value = true })
 Menu.flashQ:MenuElement({ id = "margin", name = "Range safety margin", value = 80, min = 0, max = 150, step = 10 })
@@ -502,8 +500,7 @@ local function FQSolve(i)
     if alen < 1 then return nil end
     if alen - FLASH_RANGE > Q_RANGE then return nil end
     local ux, uz = ax / alen, az / alen
-    local hold = (alen > Q_RANGE and Q_RANGE) or alen
-    return S.x + ux * hold, S.z + uz * hold, S.x + ux * FLASH_RANGE, S.z + uz * FLASH_RANGE
+    return S.x + ux * FLASH_RANGE, S.z + uz * FLASH_RANGE
 end
 
 local function FQFlash()
@@ -513,20 +510,6 @@ end
 
 local function FlashQ()
     if FQ.stage == 1 then
-        local act = myHero.activeSpell
-        if act and act.valid and act.name == NAME_Q and not act.isStopped then
-            if (act.castEndTime or 0) - NOW <= FLASH_LEAD then
-                FQReset()
-                return true
-            end
-            if FQFlash() then FQReset() end
-            return true
-        end
-        if NOW > FQ.deadline then FQReset() end
-        return true
-    end
-
-    if FQ.stage == 2 then
         local dx, dz = S.x - FQ.px, S.z - FQ.pz
         if dx * dx + dz * dz > FLASH_MOVED2 then
             local idx = IndexOfId(FQ.id)
@@ -554,7 +537,7 @@ local function FlashQ()
 
     local pick, pickD = 0, math_huge
     local band = 0
-    local cx, cz, fx, fz
+    local fx, fz
     local lo = (Menu.flashQ.onlyOut:Value() and QCastRange()) or 0
     local lo2 = lo * lo
     local hi = FQRange()
@@ -564,10 +547,10 @@ local function FlashQ()
         if d2 > lo2 and d2 <= hi2 then
             band = band + 1
             if d2 < pickD then
-                local a, b, c, d = FQSolve(i)
+                local a, b = FQSolve(i)
                 if a then
                     pick, pickD = i, d2
-                    cx, cz, fx, fz = a, b, c, d
+                    fx, fz = a, b
                 end
             end
         end
@@ -582,18 +565,9 @@ local function FlashQ()
     FQ.fx, FQ.fz = fx, fz
     FQ.px, FQ.pz = S.x, S.z
 
-    if Menu.flashQ.order:Value() == 2 then
-        if not FQFlash() then return true end
-        FQ.stage = 2
-        FQ.deadline = NOW + 1
-        return true
-    end
-
-    Pos.x, Pos.y, Pos.z = cx, S.y, cz
-    if CastSpell(HK_Q, Pos) == false then return true end
-    SentTick[SQ] = TICK
+    if not FQFlash() then return true end
     FQ.stage = 1
-    FQ.deadline = NOW + Q_DELAY + 0.4
+    FQ.deadline = NOW + 1
     return true
 end
 
