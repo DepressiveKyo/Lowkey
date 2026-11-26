@@ -2,7 +2,7 @@ if _G.__LOWKEY_DRAVEN_LOADED then return end
 _G.__LOWKEY_DRAVEN_LOADED = true
 if myHero.charName ~= "Draven" then return end
 
-local VERSION = "1.2"
+local VERSION = "1.3"
 local SCRIPT_NAME = "Lowkey Draven"
 
 local PredTries = 0
@@ -18,6 +18,7 @@ local tostring = tostring
 local Game = Game
 local myHero = myHero
 
+local GameTimer = Game.Timer
 local GameHeroCount = Game.HeroCount
 local GameHero = Game.Hero
 local GameCanUseSpell = Game.CanUseSpell
@@ -87,6 +88,8 @@ local S = {
 }
 
 local SentTick = {}
+local PendCt = {}
+local PendUntil = {}
 
 local EHo, EHx, EHz, EHd2 = {}, {}, {}, {}
 local EHhp, EHarm, EHhpP = {}, {}, {}
@@ -475,16 +478,55 @@ local function RDamage(i)
     return raw * PhysMul(EHarm[i])
 end
 
+local function AckWindow()
+    local sdk = _G.SDK
+    local d = sdk and sdk.Data
+    if d and d.GetLatency then
+        local ok, lat = pcall(d.GetLatency, d)
+        if ok and type(lat) == "number" and lat > 0 then return lat * 2 + 0.05 end
+    end
+    return 0.2
+end
+
+local function SlotFree(slot)
+    local pc = PendCt[slot]
+    if pc == nil then return true end
+    local data = myHero:GetSpellData(slot)
+    local ct = data and data.castTime
+    if ct ~= pc then
+        PendCt[slot] = nil
+        return true
+    end
+    if GameCanUseSpell(slot) ~= 0 then
+        PendCt[slot] = nil
+        return true
+    end
+    if GameTimer() >= PendUntil[slot] then
+        PendCt[slot] = nil
+        return true
+    end
+    return false
+end
+
+local function MarkSent(slot)
+    local data = myHero:GetSpellData(slot)
+    PendCt[slot] = (data and data.castTime) or 0
+    PendUntil[slot] = GameTimer() + AckWindow()
+    SentTick[slot] = TICK
+end
+
 local function Send(hk, slot, x, z)
+    if not SlotFree(slot) then return false end
     Pos.x, Pos.y, Pos.z = x, S.y, z
     if CastSpell(hk, Pos) == false then return false end
-    SentTick[slot] = TICK
+    MarkSent(slot)
     return true
 end
 
 local function SendSelf(hk, slot)
+    if not SlotFree(slot) then return false end
     if CastSpell(hk) == false then return false end
-    SentTick[slot] = TICK
+    MarkSent(slot)
     return true
 end
 
@@ -805,8 +847,17 @@ local function OnTick()
     end
 end
 
-local function OnPreAttack()
+local function OnPreAttack(args)
     if myHero.dead or S.casting then return end
+    local target = args and args.Target
+    if target then
+        local sdk = _G.SDK
+        local d = sdk and sdk.Data
+        if d and d.IsInAutoAttackRange then
+            local ok, inRange = pcall(d.IsInAutoAttackRange, d, myHero, target)
+            if ok and inRange == false then return end
+        end
+    end
     CastQ()
 end
 
