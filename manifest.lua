@@ -1,8 +1,8 @@
 return {
     api = 1,
-    version = "2026.11.26.1606",
+    version = "2026.11.26.1615",
     scripts = {
-        ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 24409, sha256 = "f108524f3a51094492001d5ecd107611626748e8252c8ed6294e8f1b201fcc8e", champion = "Draven" },
+        ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 26969, sha256 = "bad831d368be91071f6bc4914eb7adb8311d40bdfc28ea17f03daec7aec7a5b1", champion = "Draven" },
         ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24219, sha256 = "e91b101841a92720940dbfd41286358346250da57e45b5d98284b2bc5e497871", champion = "Lillia" },
         ["LowkeyChampions"] = { file = "scripts/core/LowkeyChampions.lua", bytes = 27399, sha256 = "93c98170af6b2ca8b89e0060a586429cd3eed58e92807711e19b89aed204f5a0", order = 20 },
         ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 85155, sha256 = "242b123acdc7435d8af5306c54ca3d20baaec3dd5c88ab4688e2c91ecfdb197c", order = 10 },

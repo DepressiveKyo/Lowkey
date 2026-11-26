@@ -2,7 +2,7 @@ if _G.__LOWKEY_DRAVEN_LOADED then return end
 _G.__LOWKEY_DRAVEN_LOADED = true
 if myHero.charName ~= "Draven" then return end
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local SCRIPT_NAME = "Lowkey Draven"
 
 local PredTries = 0
@@ -81,14 +81,16 @@ local S = {
     casting = false,
     mode = 0,
     ti = 0,
+    hpPct = 100,
     catching = false,
     catchD2 = 0,
+    why = "",
 }
 
 local SentTick = {}
 
 local EHo, EHx, EHz, EHd2 = {}, {}, {}, {}
-local EHhp, EHarm = {}, {}
+local EHhp, EHarm, EHhpP = {}, {}, {}
 local EHn = 0
 
 local EList, EListN = {}, 0
@@ -115,7 +117,16 @@ Menu.axe:MenuElement({ id = "selfRange", name = "Catch within", value = 700, min
 Menu.axe:MenuElement({ id = "stopRange", name = "Stop when closer than", value = 80, min = 0, max = 300, step = 10 })
 Menu.axe:MenuElement({ id = "comboLeash", name = "In combo, stay near target", value = true })
 Menu.axe:MenuElement({ id = "targetRange", name = "Leash distance", value = 900, min = 200, max = 1600, step = 50 })
-Menu.axe:MenuElement({ id = "noTurret", name = "Never walk under enemy turret", value = true })
+Menu.axe:MenuElement({
+    id = "turretRule",
+    name = "Under enemy turret",
+    value = 2,
+    drop = { "Never go", "Smart", "Always go" },
+})
+Menu.axe:MenuElement({ id = "diveHP", name = "Smart: target HP% below", value = 40, min = 5, max = 100, step = 5, identifier = "%" })
+Menu.axe:MenuElement({ id = "diveMine", name = "Smart: my HP% above", value = 50, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.axe:MenuElement({ id = "diveReach", name = "Smart: axe must keep target in range", value = true })
+Menu.axe:MenuElement({ id = "diveCrowd", name = "Smart: skip if enemies near axe >=", value = 3, min = 1, max = 5, step = 1 })
 Menu.axe:MenuElement({ id = "wChase", name = "W to reach a far axe", value = true })
 Menu.axe:MenuElement({ id = "wChaseAt", name = "W if axe further than", value = 550, min = 200, max = 1300, step = 50 })
 
@@ -263,6 +274,8 @@ local function SyncSelf()
     local p = myHero.pos
     S.x, S.y, S.z = p.x, p.y, p.z
     S.ad = myHero.bonusDamage or 0
+    local mh = myHero.maxHealth
+    S.hpPct = (mh and mh > 0 and myHero.health / mh * 100) or 100
 
     local q = myHero:GetSpellData(SQ)
     local w = myHero:GetSpellData(SW)
@@ -348,6 +361,8 @@ local function SyncEnemies()
             EHd2[n] = dx * dx + dz * dz
             EHhp[n] = h.health + (h.shieldAD or 0)
             EHarm[n] = h.armor
+            local mh = h.maxHealth
+            EHhpP[n] = (mh and mh > 0 and h.health / mh * 100) or 100
             if tgtId and h.networkID == tgtId then ti = n end
         end
     end
@@ -407,6 +422,50 @@ local function UnderTurret(x, z)
         if dx * dx + dz * dz <= TURRET_RANGE2 then return true end
     end
     return false
+end
+
+local function AttackReachTo(unit)
+    local sdk = _G.SDK
+    local d = sdk and sdk.Data
+    if d and d.GetAutoAttackRange then
+        local ok, r = pcall(d.GetAutoAttackRange, d, myHero, unit)
+        if ok and type(r) == "number" and r > 0 then return r end
+    end
+    return (myHero.range or 550) + (myHero.boundingRadius or 65) + (unit.boundingRadius or 65)
+end
+
+local function CrowdAt(x, z, limit)
+    local n = 0
+    for i = 1, EHn do
+        local dx, dz = EHx[i] - x, EHz[i] - z
+        if dx * dx + dz * dz <= 1000000 then
+            n = n + 1
+            if n >= limit then return true end
+        end
+    end
+    return false
+end
+
+local function DiveAllowed(x, z)
+    local rule = Menu.axe.turretRule:Value()
+    if rule == 3 then return true, "dive" end
+    if rule == 1 then return false, "turret" end
+
+    if S.hpPct <= Menu.axe.diveMine:Value() then return false, "my hp" end
+
+    local i = S.ti
+    if i == 0 then return false, "no target" end
+    if EHhpP[i] > Menu.axe.diveHP:Value() then return false, "target hp" end
+
+    if Menu.axe.diveReach:Value() then
+        local reach = AttackReachTo(EHo[i])
+        local dx, dz = EHx[i] - x, EHz[i] - z
+        if dx * dx + dz * dz > reach * reach then return false, "no reach" end
+    end
+
+    if CrowdAt(x, z, Menu.axe.diveCrowd:Value()) then return false, "crowded" end
+
+    return true, "dive"
 end
 
 local function EDamage(i) return S.eRaw * PhysMul(EHarm[i]) end
@@ -484,6 +543,7 @@ local function CastR(i)
 end
 
 local function PickAxe()
+    S.why = ""
     if not Menu.axe.enable:Value() then return false end
     if AxeN == 0 then return false end
 
@@ -494,26 +554,36 @@ local function PickAxe()
     local leash2 = leashRange * leashRange
     local tx, tz = 0, 0
     if leash then tx, tz = EHx[S.ti], EHz[S.ti] end
-    local avoid = Menu.axe.noTurret:Value()
 
     local best, bestD = 0, math_huge
+    local bestDive = false
+    local refusal = ""
     for i = 1, AxeN do
         local d2 = AxeD2[i]
         if d2 <= reach2 and d2 < bestD then
             local ax, az = AxeX[i], AxeZ[i]
-            local ok = true
+            local ok, dive = true, false
             if leash then
                 local dx, dz = ax - tx, az - tz
                 ok = dx * dx + dz * dz <= leash2
+                if not ok then refusal = "leashed" end
             end
-            if ok and avoid and UnderTurret(ax, az) then ok = false end
+            if ok and UnderTurret(ax, az) then
+                local allow, reason = DiveAllowed(ax, az)
+                ok, dive = allow, allow
+                if not allow then refusal = reason end
+            end
             if ok then
-                best, bestD = i, d2
+                best, bestD, bestDive = i, d2, dive
             end
         end
     end
 
-    if best == 0 then return false end
+    if best == 0 then
+        S.why = refusal
+        return false
+    end
+    S.why = (bestDive and "dive") or ""
     CatchX, CatchZ = AxeX[best], AxeZ[best]
     S.catchD2 = bestD
     return true
@@ -674,9 +744,11 @@ local function DrawPanel()
     end
     DrawText(PC.axeText, 12, x + 10, y + 8, (S.spinning > 0 and COL_AXE) or COL_OFF)
     DrawText((S.fury and "FURY") or "fury", 12, x + 90, y + 8, (S.fury and COL_FURY) or COL_OFF)
-    DrawText((S.catching and "CATCH") or "catch", 12, x + 160, y + 8, (S.catching and COL_AXE) or COL_OFF)
+    local tag = (S.catching and "CATCH") or "catch"
+    if S.why ~= "" then tag = tag .. " " .. S.why end
+    DrawText(tag, 12, x + 160, y + 8, (S.catching and COL_AXE) or COL_OFF)
     if S.rDouble then
-        DrawText("R x2", 12, x + 240, y + 8, COL_RDY)
+        DrawText("Rx2", 12, x + 268, y + 8, COL_RDY)
     end
 
     for i = 1, 4 do
