@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.3"
+local VERSION = "1.4"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -43,6 +43,10 @@ local R_RADIUS, R_RADIUS2 = 400, 400 * 400
 local R_DELAY = 0.45
 local LEAP_HOLD = 0.4
 local HOOK_MARK = 1.5
+local FLASH_RANGE = 400
+local FLASH_LEAD = 0.15
+local FLASH_MOVED2 = 200 * 200
+local FLASH_NAMES = { ["SummonerFlash"] = true, ["SummonerFlash_Jade"] = true }
 
 local Q_BASE = { 100, 150, 200, 250, 300 }
 local Q_AP = 0.9
@@ -62,6 +66,7 @@ local COL_W = DrawColor(150, 255, 220, 120)
 local COL_E = DrawColor(150, 120, 255, 180)
 local COL_R = DrawColor(200, 255, 90, 90)
 local COL_HOOK = DrawColor(255, 255, 230, 80)
+local COL_FQ = DrawColor(170, 255, 170, 60)
 local COL_BG = DrawColor(180, 10, 10, 15)
 local COL_BORD = DrawColor(255, 200, 50, 50)
 local COL_RDY = DrawColor(255, 120, 255, 120)
@@ -121,6 +126,14 @@ Menu.combo:MenuElement({ id = "useE", name = "Use E (flay)", value = true })
 Menu.combo:MenuElement({ id = "ePull", name = "E pulls toward me", value = true })
 Menu.combo:MenuElement({ id = "useR", name = "Use R (box)", value = true })
 Menu.combo:MenuElement({ id = "rCount", name = "R if enemies inside >=", value = 2, min = 1, max = 5 })
+
+Menu:MenuElement({ type = MENU, id = "flashQ", name = "Flash Q" })
+Menu.flashQ:MenuElement({ id = "key", name = "Hold key", key = string.byte("T") })
+Menu.flashQ:MenuElement({ id = "order", name = "Order", value = 1, drop = { "Q then Flash", "Flash then Q" } })
+Menu.flashQ:MenuElement({ id = "hit", name = "Min hit chance", value = 2, drop = { "Normal", "High", "Immobile" } })
+Menu.flashQ:MenuElement({ id = "onlyOut", name = "Only out of normal Q range", value = true })
+Menu.flashQ:MenuElement({ id = "margin", name = "Range safety margin", value = 40, min = 0, max = 150, step = 10 })
+Menu.flashQ:MenuElement({ id = "ring", name = "Draw flash Q range", value = true })
 
 Menu:MenuElement({ type = MENU, id = "leap", name = "Q2 Leap" })
 Menu.leap:MenuElement({ id = "enable", name = "Fly to hooked target", value = false })
@@ -410,6 +423,154 @@ local function CastQ(i)
     return Send(HK_Q, SQ, x, z)
 end
 
+local FLASH_SLOT, FLASH_KEY = nil, nil
+
+local function FlashSlot()
+    if FLASH_SLOT then return true end
+    local s = myHero:GetSpellData(SUMMONER_1)
+    local n = s and s.name
+    if n and (FLASH_NAMES[n] or string_lower(n) == "summonerflash") then
+        FLASH_SLOT, FLASH_KEY = SUMMONER_1, HK_SUMMONER_1
+        return true
+    end
+    s = myHero:GetSpellData(SUMMONER_2)
+    n = s and s.name
+    if n and (FLASH_NAMES[n] or string_lower(n) == "summonerflash") then
+        FLASH_SLOT, FLASH_KEY = SUMMONER_2, HK_SUMMONER_2
+        return true
+    end
+    return false
+end
+
+local function FlashReady()
+    if not FlashSlot() then return false end
+    return GameCanUseSpell(FLASH_SLOT) == 0
+end
+
+local FQ = { stage = 0, id = 0, fx = 0, fz = 0, px = 0, pz = 0, deadline = 0 }
+local VSrc = { x = 0, y = 0, z = 0 }
+
+local function FQReset()
+    FQ.stage = 0
+    FQ.id = 0
+end
+
+local function FQRange()
+    local r = Q_RANGE + FLASH_RANGE - Menu.flashQ.margin:Value()
+    if r < Q_RANGE then r = Q_RANGE end
+    return r
+end
+
+local function IndexOfId(id)
+    if id == 0 then return 0 end
+    for i = 1, EHn do
+        local o = EHo[i]
+        if o and o.networkID == id then return i end
+    end
+    return 0
+end
+
+local function FQSolve(i)
+    local dx, dz = EHx[i] - S.x, EHz[i] - S.z
+    local len = math_sqrt(dx * dx + dz * dz)
+    if len < 1 then return nil end
+    VSrc.x = S.x + dx / len * FLASH_RANGE
+    VSrc.y = S.y
+    VSrc.z = S.z + dz / len * FLASH_RANGE
+
+    local cx, cz
+    if PredQ then
+        PredQ.Range = Q_RANGE
+        PredQ:GetPrediction(EHo[i], VSrc)
+        if not PredQ:CanHit(HitOf(Menu.flashQ.hit:Value())) then return nil end
+        local cp = PredQ.CastPosition
+        if not (cp and cp.x and cp.z) then return nil end
+        cx, cz = cp.x, cp.z
+    else
+        cx, cz = EHx[i], EHz[i]
+    end
+
+    local ax, az = cx - S.x, cz - S.z
+    local alen = math_sqrt(ax * ax + az * az)
+    if alen < 1 then return nil end
+    if alen - FLASH_RANGE > Q_RANGE then return nil end
+    local ux, uz = ax / alen, az / alen
+    local hold = (alen > Q_RANGE and Q_RANGE) or alen
+    return S.x + ux * hold, S.z + uz * hold, S.x + ux * FLASH_RANGE, S.z + uz * FLASH_RANGE
+end
+
+local function FQFlash()
+    Pos.x, Pos.y, Pos.z = FQ.fx, S.y, FQ.fz
+    return CastSpell(FLASH_KEY, Pos) ~= false
+end
+
+local function FlashQ()
+    if FQ.stage == 1 then
+        local act = myHero.activeSpell
+        if act and act.valid and act.name == NAME_Q and not act.isStopped then
+            if (act.castEndTime or 0) - NOW > FLASH_LEAD then
+                FQFlash()
+            end
+            FQReset()
+            return true
+        end
+        if NOW > FQ.deadline then FQReset() end
+        return true
+    end
+
+    if FQ.stage == 2 then
+        local dx, dz = S.x - FQ.px, S.z - FQ.pz
+        if dx * dx + dz * dz > FLASH_MOVED2 then
+            local idx = IndexOfId(FQ.id)
+            FQReset()
+            if idx ~= 0 then return CastQ(idx) end
+            return false
+        end
+        if NOW > FQ.deadline then FQReset() end
+        return true
+    end
+
+    if not Menu.flashQ.key:Value() then return false end
+    if not S.qR or S.hooked or SentTick[SQ] == TICK then return false end
+    if not FlashReady() then return false end
+
+    local pick, pickD = 0, math_huge
+    local cx, cz, fx, fz
+    local lo = (Menu.flashQ.onlyOut:Value() and QCastRange()) or 0
+    local lo2 = lo * lo
+    local hi = FQRange()
+    local hi2 = hi * hi
+    for i = 1, EHn do
+        local d2 = EHd2[i]
+        if d2 > lo2 and d2 <= hi2 and d2 < pickD then
+            local a, b, c, d = FQSolve(i)
+            if a then
+                pick, pickD = i, d2
+                cx, cz, fx, fz = a, b, c, d
+            end
+        end
+    end
+    if pick == 0 then return false end
+
+    FQ.id = EHo[pick].networkID or 0
+    FQ.fx, FQ.fz = fx, fz
+    FQ.px, FQ.pz = S.x, S.z
+
+    if Menu.flashQ.order:Value() == 2 then
+        if not FQFlash() then return true end
+        FQ.stage = 2
+        FQ.deadline = NOW + 1
+        return true
+    end
+
+    Pos.x, Pos.y, Pos.z = cx, S.y, cz
+    if CastSpell(HK_Q, Pos) == false then return true end
+    SentTick[SQ] = TICK
+    FQ.stage = 1
+    FQ.deadline = NOW + Q_DELAY + 0.4
+    return true
+end
+
 local function CastE(i, pull)
     if i == 0 or not S.eR or SentTick[SE] == TICK then return false end
     if EHd2[i] > E_RANGE2 then return false end
@@ -599,6 +760,8 @@ local function DrawPanel()
     end
     DrawText((S.hooked and "HOOKED") or "hook", 12, x + 10, y + 8, (S.hooked and COL_HOOK) or COL_OFF)
     DrawText((AHn > 0 and string_format("ALLIES %d", AHn)) or "allies 0", 12, x + 110, y + 8, COL_OFF)
+    local fr = FlashReady()
+    DrawText((fr and "FLASH") or "flash", 12, x + 210, y + 8, (fr and COL_FQ) or COL_OFF)
 
     for i = 1, 4 do
         DrawText(PC.cdText[i], 12, x + 10 + (i - 1) * 72, y + 32, (PC.cdReady[i] and COL_RDY) or COL_CD)
@@ -612,6 +775,7 @@ local function OnDraw()
     if not myHero.visible then return end
     local pos = myHero.pos
     if draw.qRange:Value() then DrawCircle(pos, Q_RANGE - Menu.combo.qSafety:Value(), 1, COL_Q) end
+    if Menu.flashQ.ring:Value() and FlashReady() then DrawCircle(pos, FQRange(), 1, COL_FQ) end
     if draw.wRange:Value() then DrawCircle(pos, W_RANGE, 1, COL_W) end
     if draw.eRange:Value() then DrawCircle(pos, E_RANGE, 1, COL_E) end
     if draw.rRange:Value() then DrawCircle(pos, R_RADIUS, 1, COL_R) end
@@ -626,7 +790,11 @@ local function OnTick()
     SyncEnemies()
     SyncAllies()
 
-    if GameIsChatOpen() or S.casting or myHero.isChanneling then return end
+    if GameIsChatOpen() then return end
+
+    if FlashQ() then return end
+
+    if S.casting or myHero.isChanneling then return end
 
     if RunLeap() then return end
     if AutoE() then return end
