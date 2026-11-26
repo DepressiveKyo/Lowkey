@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.3"
+local VERSION = "1.4"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -52,6 +52,8 @@ local FARM_SLACK = 20
 local E_RANGE, E_RANGE2 = 475, 475 * 475
 local E_BASE = { 60, 70, 80, 90, 100 }
 local E_AD, E_AP = 0.20, 0.60
+local EK = { ramp = 0.25, rampMax = 2, speed = 750, msShare = 0.90, dash = 475 }
+local BUFF_ERAMP = "yasuodashscalar"
 
 local W_RANGE = 400
 local W_CAST = 0.25
@@ -95,6 +97,7 @@ local S = {
     qCd = 0, wCd = 0, eCd = 0, rCd = 0,
     qR = false, wR = false, eR = false, rR = false,
     qRaw = 0, eRaw = 0, rRaw = 0,
+    lat = 0.03, eStacks = 0, eDelay = 0.3,
     qDelay = Q_DELAY_MAX,
     qStacks = 0,
     hasQ3 = false,
@@ -175,10 +178,11 @@ Menu:MenuElement({ type = MENU, id = "clear", name = "Clear" })
 Menu.clear:MenuElement({ id = "useQ", name = "Use Q", value = true })
 Menu.clear:MenuElement({ id = "useQ3", name = "Use Q3 tornado", value = true })
 Menu.clear:MenuElement({ id = "q3Min", name = "Q3 on lane minions, hit at least", value = 2, min = 1, max = 6, step = 1 })
-Menu.clear:MenuElement({ id = "useE", name = "Use E to dash through them", value = true })
+Menu.clear:MenuElement({ id = "eMode", name = "Use E", value = 3, drop = { "Never", "Any target in range", "Only to last hit" } })
 
 Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last Hit" })
 Menu.lasthit:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.lasthit:MenuElement({ id = "useE", name = "Use E", value = true })
 
 Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
 Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
@@ -201,6 +205,16 @@ local function PhysMul(armor, pen)
     local bonus = myHero.bonusArmorPenPercent
     if bonus and bonus > 0 then v = v * bonus end
     local flat = myHero.armorPen
+    if flat and flat > 0 then v = v - flat end
+    if v >= 0 then return 100 / (100 + v) end
+    return 2 - 100 / (100 - v)
+end
+
+local function MagicMul(mr)
+    local v = mr or 0
+    local pct = myHero.magicPenPercent
+    if pct and pct > 0 then v = v * pct end
+    local flat = myHero.magicPen
     if flat and flat > 0 then v = v - flat end
     if v >= 0 then return 100 / (100 + v) end
     return 2 - 100 / (100 - v)
@@ -344,8 +358,24 @@ local function SyncSelf()
         if ammo and ammo > 0 and ammo <= 2 then S.qStacks = ammo end
     end
 
+    S.eStacks = 0
+    if map then
+        local rs = map[BUFF_ERAMP]
+        if rs then S.eStacks = math_min(rs.count or 0, EK.rampMax) end
+    end
+    local sdkD = _G.SDK
+    sdkD = sdkD and sdkD.Data
+    if sdkD and sdkD.GetLatency then
+        local ok, lat = pcall(sdkD.GetLatency, sdkD)
+        if ok and type(lat) == "number" and lat > 0 then S.lat = lat end
+    end
+    local ms = myHero.ms
+    if not ms or ms <= 0 then ms = 325 end
+    S.eDelay = EK.dash / (EK.speed + ms * EK.msShare) + S.lat
+
     S.qRaw = (S.qLv > 0 and Q_BASE[S.qLv] + Q_AD * (myHero.totalDamage or 0)) or 0
-    S.eRaw = (S.eLv > 0 and E_BASE[S.eLv] + E_AD * S.ad + E_AP * S.ap) or 0
+    S.eRaw = (S.eLv > 0 and E_BASE[S.eLv] * (1 + EK.ramp * S.eStacks)
+        + E_AD * S.ad + E_AP * S.ap) or 0
     S.rRaw = (S.rLv > 0 and R_BASE[S.rLv] + R_AD * S.ad) or 0
 
     S.mode = OrbMode()
@@ -944,29 +974,50 @@ local function FarmQ(useQ3, useQ, q3Min)
     return Send(HK_Q, SQ, bx, bz)
 end
 
-local function FarmE()
-    if not Menu.clear.useE:Value() or not S.eR or S.casting then return false end
-    if SentTick[SE] == TICK then return false end
-    local reach2 = E_RANGE2
-    local sx, sz = S.x, S.z
-    for i = 1, JMn do
-        local dx, dz = JMx[i] - sx, JMz[i] - sz
-        if dx * dx + dz * dz <= reach2 and SendUnit(HK_E, SE, JMo[i]) then return true end
-    end
-    for i = 1, CMn do
-        local dx, dz = CMx[i] - sx, CMz[i] - sz
-        if dx * dx + dz * dz <= reach2 and SendUnit(HK_E, SE, CMo[i]) then return true end
+local function Marked(unit)
+    local map = BuffMapOf(unit)
+    if not map then return false end
+    for m = 1, 3 do
+        if map[EMARKS[m]] then return true end
     end
     return false
 end
 
+local function EKills(unit)
+    local raw = S.eRaw
+    if raw <= 0 then return false end
+    return HealthAfter(unit, S.eDelay) <= raw * MagicMul(unit.magicResist)
+end
+
+local function SweepE(n, uo, ux, uz, killOnly)
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local dx, dz = ux[i] - sx, uz[i] - sz
+        if dx * dx + dz * dz <= E_RANGE2 then
+            local u = uo[i]
+            if (not killOnly or EKills(u)) and not Marked(u) then
+                if SendUnit(HK_E, SE, u) then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function FarmE(mode)
+    if mode == 1 or not S.eR or S.casting or SentTick[SE] == TICK then return false end
+    local killOnly = mode == 3
+    if SweepE(JMn, JMo, JMx, JMz, killOnly) then return true end
+    return SweepE(CMn, CMo, CMx, CMz, killOnly)
+end
+
 local function RunClear()
     local node = Menu.clear
+    if FarmE(node.eMode:Value()) then return end
     if FarmQ(node.useQ3:Value(), node.useQ:Value(), node.q3Min:Value()) then return end
-    if FarmE() then return end
 end
 
 local function RunLastHit()
+    if Menu.lasthit.useE:Value() and FarmE(3) then return end
     if not Menu.lasthit.useQ:Value() or not QFarmReady() or S.hasQ3 then return end
     local dmg = S.qRaw
     if dmg <= 0 then return end
