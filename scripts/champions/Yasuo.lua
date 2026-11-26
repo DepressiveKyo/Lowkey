@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.8"
+local VERSION = "1.9"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -199,6 +199,9 @@ Menu.lasthit:MenuElement({ id = "useE", name = "Use E", value = true })
 Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
 Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
 Menu.ks:MenuElement({ id = "useR", name = "R killsteal", value = false })
+
+Menu:MenuElement({ type = MENU, id = "debug", name = "Debug" })
+Menu.debug:MenuElement({ id = "trace", name = "Log every cast to yasuo.log", value = false })
 
 Menu:MenuElement({ type = MENU, id = "draw", name = "Drawings" })
 Menu.draw:MenuElement({ id = "enable", name = "Enable drawings", value = true })
@@ -746,24 +749,34 @@ end
 
 local function Send(hk, slot, x, z)
     if not SlotFree(slot) then return false end
+    if type(x) ~= "number" or x ~= x or type(z) ~= "number" or z ~= z then return false end
     Pos.x, Pos.y, Pos.z = x, S.y, z
+    local lk = Menu.debug.trace:Value() and _G.Lowkey
+    if lk and lk.Log then
+        lk:Log("yasuo", string_format("send slot %d at %.0f %.0f mode %d", slot, x, z, S.mode))
+    end
     if CastSpell(hk, Pos) == false then return false end
     MarkSent(slot)
     return true
 end
 
+local function Whole(v)
+    if type(v) ~= "number" or v ~= v or v < -32000 or v > 32000 then return nil end
+    return math_floor(v)
+end
+
 local function SaveCursor()
     if CursorBackX then return end
     local cp = _G.cursorPos
-    if cp and type(cp.x) == "number" and type(cp.y) == "number" then
-        CursorBackX, CursorBackY = cp.x, cp.y
-    end
+    if not cp then return end
+    local x, y = Whole(cp.x), Whole(cp.y)
+    if x and y then CursorBackX, CursorBackY = x, y end
 end
 
 local function RestoreCursor()
-    if not CursorBackX then return end
-    SetCursorPos(CursorBackX, CursorBackY)
+    local x, y = CursorBackX, CursorBackY
     CursorBackX, CursorBackY = nil, nil
+    if x and y then SetCursorPos(x, y) end
 end
 
 local function SendUnit(hk, slot, unit)
@@ -772,6 +785,11 @@ local function SendUnit(hk, slot, unit)
     if p == nil then return false end
     local p2 = unit.pos2D
     if p2 == nil or p2.onScreen ~= true then return false end
+    local lk = Menu.debug.trace:Value() and _G.Lowkey
+    if lk and lk.Log then
+        lk:Log("yasuo", string_format("send slot %d on %s mode %d", slot,
+            tostring(unit.charName), S.mode))
+    end
     SaveCursor()
     if CastSpell(hk, p) == false then return false end
     MarkSent(slot)
