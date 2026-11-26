@@ -582,21 +582,23 @@ function Combat:CritMultiplier(from)
     return base
 end
 
-function Combat:GetStaticAutoAttackDamage(from, targetIsMinion)
-    local args = {
-        From = from,
-        RawTotal = from.totalDamage or 0,
-        RawPhysical = 0,
-        RawMagical = 0,
-        CalculatedTrue = 0,
-        CalculatedPhysical = 0,
-        CalculatedMagical = 0,
-        DamageType = DMG_PHYSICAL,
-        TargetIsMinion = targetIsMinion,
-    }
+function Combat:FillStaticAutoAttackDamage(args, from, targetIsMinion)
+    args.From = from
+    args.RawTotal = from.totalDamage or 0
+    args.RawPhysical = 0
+    args.RawMagical = 0
+    args.CalculatedTrue = 0
+    args.CalculatedPhysical = 0
+    args.CalculatedMagical = 0
+    args.DamageType = DMG_PHYSICAL
+    args.TargetIsMinion = targetIsMinion
     local hook = Hooks.StaticDamage
     if hook then hook(args) end
     return args
+end
+
+function Combat:GetStaticAutoAttackDamage(from, targetIsMinion)
+    return self:FillStaticAutoAttackDamage({}, from, targetIsMinion)
 end
 
 function Combat:GetAutoAttackDamage(from, target, respectPassives, static)
@@ -1468,6 +1470,7 @@ local Farm = {
     atkTarget = {}, atkSpeed = {}, atkStart = {}, atkWindup = {},
     atkAnim = {}, atkEnd = {}, atkSrc = {}, atkIsTurret = {},
     dmgBySrc = {},
+    staticBuf = {},
     minionN = 0, minionHigh = 0,
     minion = {}, predHP = {}, killable = {}, nearly = {}, soon = {}, unkillable = {}, atTurret = {},
     anyKillable = false,
@@ -1711,55 +1714,58 @@ function Farm:Refresh()
     self.inRangeStructHigh = structN
     self.inRangeStructN = structN
 
-    self.static = Combat:GetStaticAutoAttackDamage(myHero, true)
-    local windup = Timing:Windup()
-    local anim = Timing:Animation()
-    local speed = Timing:ProjectileSpeed()
-    local base = windup + Net.half - Menu.farm.delay:Value() * 0.001
-    local slack = (1.5 - anim) * 0.3
-    if slack < 0 then slack = 0 end
-
     local mn = 0
-    for i = 1, laneN do
-        local u = lane[i]
-        local fly = 0
-        if speed < HUGE then
-            fly = Dist(myHero, u) / speed
-        end
-        local horizon = base + fly
-        local dmg = Combat:GetAutoAttackDamage(myHero, u, true, self.static)
-        local hp, turret = self:Predict(u, horizon)
-        local killable, nearly, soon, dead = false, false, false, false
-        if hp < 0 then
-            dead = true
-            local cbs = self.unkillableCb
-            for c = 1, #cbs do cbs[c](u) end
-        elseif hp - dmg < 0 then
-            killable = true
-            self.anyKillable = true
-        else
-            local name = u.charName
-            local siege = name and name:lower():find("minionsiege", 1, true)
-            local soonHorizon = anim + (siege and horizon * 1.4 or horizon) + slack
-            local hp2 = self:Predict(u, soonHorizon)
-            if hp2 < 0 then
-                nearly = true
-                self.waitFrame = Frame.n
-            elseif hp2 - dmg < 0 then
-                nearly = true
-            else
-                local hp3 = self:Predict(u, 1.25 * anim + 1.25 * horizon + 0.5 + slack)
-                if hp3 - dmg < 0 then soon = true end
+    if laneN > 0 then
+        local static = Combat:FillStaticAutoAttackDamage(self.staticBuf, myHero, true)
+        self.static = static
+        local windup = Timing:Windup()
+        local anim = Timing:Animation()
+        local speed = Timing:ProjectileSpeed()
+        local base = windup + Net.half - Menu.farm.delay:Value() * 0.001
+        local slack = (1.5 - anim) * 0.3
+        if slack < 0 then slack = 0 end
+
+        for i = 1, laneN do
+            local u = lane[i]
+            local fly = 0
+            if speed < HUGE then
+                fly = Dist(myHero, u) / speed
             end
+            local horizon = base + fly
+            local dmg = Combat:GetAutoAttackDamage(myHero, u, true, static)
+            local hp, turret = self:Predict(u, horizon)
+            local killable, nearly, soon, dead = false, false, false, false
+            if hp < 0 then
+                dead = true
+                local cbs = self.unkillableCb
+                for c = 1, #cbs do cbs[c](u) end
+            elseif hp - dmg < 0 then
+                killable = true
+                self.anyKillable = true
+            else
+                local name = u.charName
+                local siege = name and name:lower():find("minionsiege", 1, true)
+                local soonHorizon = anim + (siege and horizon * 1.4 or horizon) + slack
+                local hp2 = self:Predict(u, soonHorizon)
+                if hp2 < 0 then
+                    nearly = true
+                    self.waitFrame = Frame.n
+                elseif hp2 - dmg < 0 then
+                    nearly = true
+                else
+                    local hp3 = self:Predict(u, 1.25 * anim + 1.25 * horizon + 0.5 + slack)
+                    if hp3 - dmg < 0 then soon = true end
+                end
+            end
+            mn = mn + 1
+            self.minion[mn] = u
+            self.predHP[mn] = hp
+            self.killable[mn] = killable
+            self.nearly[mn] = nearly
+            self.soon[mn] = soon
+            self.unkillable[mn] = dead
+            self.atTurret[mn] = turret
         end
-        mn = mn + 1
-        self.minion[mn] = u
-        self.predHP[mn] = hp
-        self.killable[mn] = killable
-        self.nearly[mn] = nearly
-        self.soon[mn] = soon
-        self.unkillable[mn] = dead
-        self.atTurret[mn] = turret
     end
     Trim(self.minion, mn, self.minionHigh)
     self.minionHigh = mn
