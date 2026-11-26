@@ -1,7 +1,7 @@
 if _G.__LOWKEY_SMITE_LOADED then return end
 _G.__LOWKEY_SMITE_LOADED = true
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local SCRIPT_NAME = "Lowkey Smite"
 
 local MinionCount = Game.MinionCount
@@ -153,11 +153,14 @@ function LowkeySmite:Hook()
 end
 
 function LowkeySmite:Guard(fn, tag)
+    local bound = function() return fn(self) end
+    local lk = _G.Lowkey
+    if lk and lk.Guard then return lk:Guard(SCRIPT_NAME, bound, tag) end
     local seen = {}
     return function()
-        local ok, err = pcall(fn, self)
+        local ok, err = pcall(bound)
         if ok then return end
-        local text = tag .. ": " .. tostring(err)
+        local text = tostring(tag) .. ": " .. tostring(err)
         if seen[text] then return end
         seen[text] = true
         print("[" .. SCRIPT_NAME .. "] " .. text)

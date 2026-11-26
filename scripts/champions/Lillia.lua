@@ -2,7 +2,7 @@ if _G.__LOWKEY_LILLIA_LOADED then return end
 _G.__LOWKEY_LILLIA_LOADED = true
 if myHero.charName ~= "Lillia" then return end
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local SCRIPT_NAME = "Lowkey Lillia"
 
 local PredTries = 0
@@ -685,15 +685,16 @@ local function OnTick()
     end
 end
 
-local Seen = {}
-
 local function Guard(fn, tag)
+    local lk = _G.Lowkey
+    if lk and lk.Guard then return lk:Guard(SCRIPT_NAME, fn, tag) end
+    local seen = {}
     return function(...)
         local ok, err = pcall(fn, ...)
         if ok then return end
-        local text = tag .. ": " .. tostring(err)
-        if Seen[text] then return end
-        Seen[text] = true
+        local text = tostring(tag) .. ": " .. tostring(err)
+        if seen[text] then return end
+        seen[text] = true
         print("[" .. SCRIPT_NAME .. "] " .. text)
     end
 end

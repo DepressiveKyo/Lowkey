@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.8"
+local VERSION = "1.9"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -815,17 +815,33 @@ local function OnTick()
     end
 end
 
+local function Guard(fn, tag)
+    local lk = _G.Lowkey
+    if lk and lk.Guard then return lk:Guard(SCRIPT_NAME, fn, tag) end
+    local seen = {}
+    return function(...)
+        local ok, err = pcall(fn, ...)
+        if ok then return end
+        local text = tostring(tag) .. ": " .. tostring(err)
+        if seen[text] then return end
+        seen[text] = true
+        print("[" .. SCRIPT_NAME .. "] " .. text)
+    end
+end
+
 local function Hook()
+    local onTick = Guard(OnTick, "tick")
+    local onDraw = Guard(OnDraw, "draw")
     local sdk = _G.SDK
     local ticks = sdk and sdk.OnTick
     local draws = sdk and sdk.OnDraw
     if type(ticks) == "table" and type(draws) == "table" then
-        ticks[#ticks + 1] = OnTick
-        draws[#draws + 1] = OnDraw
+        ticks[#ticks + 1] = onTick
+        draws[#draws + 1] = onDraw
         return "SDK"
     end
-    Callback.Add("Tick", OnTick)
-    Callback.Add("Draw", OnDraw)
+    Callback.Add("Tick", onTick)
+    Callback.Add("Draw", onDraw)
     return "raw"
 end
 

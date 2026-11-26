@@ -171,6 +171,66 @@ local Lowkey = {
 }
 _G.Lowkey = Lowkey
 
+local CRASH_LOG = LOCAL_ROOT .. "crash.log"
+local crashFile = nil
+local crashSeen = {}
+local crashHeader = false
+
+local function Stamp()
+    if not os or not os.date then return "?" end
+    local ok, text = pcall(os.date, "%Y-%m-%d %H:%M:%S")
+    if ok and type(text) == "string" then return text end
+    return "?"
+end
+
+local function Elapsed()
+    local t = Game and Game.Timer
+    if type(t) ~= "function" then return 0 end
+    local ok, v = pcall(t)
+    if ok and type(v) == "number" then return v end
+    return 0
+end
+
+function Lowkey:Crash(who, message)
+    local text = tostring(who) .. " | " .. tostring(message)
+    if crashSeen[text] then return false end
+    crashSeen[text] = true
+    if crashFile == false then return true end
+    if not crashFile then
+        local f = io.open(CRASH_LOG, "a")
+        if not f then
+            crashFile = false
+            return true
+        end
+        crashFile = f
+    end
+    if not crashHeader then
+        crashHeader = true
+        crashFile:write(format("
+=== %s | %s@%s | %s ===
+", Stamp(), REPO,
+            tostring(self.manifest and self.manifest.version or "?"),
+            tostring(myHero and myHero.charName or "?")))
+    end
+    crashFile:write(format("[%7.1f] %s
+", Elapsed(), text))
+    crashFile:flush()
+    return true
+end
+
+function Lowkey:Guard(who, fn, tag)
+    local seen = {}
+    return function(...)
+        local ok, err = pcall(fn, ...)
+        if ok then return end
+        local text = tostring(tag) .. ": " .. tostring(err)
+        if seen[text] then return end
+        seen[text] = true
+        self:Crash(who, text)
+        print("[" .. tostring(who) .. "] " .. text)
+    end
+end
+
 function Lowkey:Sha256(data)
     return Sha256(data)
 end
