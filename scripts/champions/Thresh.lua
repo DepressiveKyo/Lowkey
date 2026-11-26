@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.5"
+local VERSION = "1.6"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -396,7 +396,7 @@ local function RDamage(i) return S.rRaw * MagicMul(EHmr[i]) end
 
 local function Send(hk, slot, x, z)
     Pos.x, Pos.y, Pos.z = x, S.y, z
-    CastSpell(hk, Pos)
+    if CastSpell(hk, Pos) == false then return false end
     SentTick[slot] = TICK
     return true
 end
@@ -418,8 +418,9 @@ local function QCastRange()
     return r
 end
 
-local function CastQ(i)
-    if i == 0 or not S.qR or SentTick[SQ] == TICK or S.attacking then return false end
+local function CastQ(i, force)
+    if i == 0 or not S.qR or SentTick[SQ] == TICK then return false end
+    if S.attacking and not force then return false end
     local cast = QCastRange()
     local cast2 = cast * cast
     if EHd2[i] > cast2 then return false end
@@ -453,7 +454,7 @@ local function FlashReady()
     return GameCanUseSpell(FLASH_SLOT) == 0
 end
 
-local FQ = { stage = 0, id = 0, fx = 0, fz = 0, px = 0, pz = 0, deadline = 0 }
+local FQ = { stage = 0, id = 0, fx = 0, fz = 0, px = 0, pz = 0, deadline = 0, why = "" }
 local VSrc = { x = 0, y = 0, z = 0 }
 
 local function FQReset()
@@ -514,10 +515,11 @@ local function FlashQ()
     if FQ.stage == 1 then
         local act = myHero.activeSpell
         if act and act.valid and act.name == NAME_Q and not act.isStopped then
-            if (act.castEndTime or 0) - NOW > FLASH_LEAD then
-                FQFlash()
+            if (act.castEndTime or 0) - NOW <= FLASH_LEAD then
+                FQReset()
+                return true
             end
-            FQReset()
+            if FQFlash() then FQReset() end
             return true
         end
         if NOW > FQ.deadline then FQReset() end
@@ -528,19 +530,30 @@ local function FlashQ()
         local dx, dz = S.x - FQ.px, S.z - FQ.pz
         if dx * dx + dz * dz > FLASH_MOVED2 then
             local idx = IndexOfId(FQ.id)
-            FQReset()
-            if idx ~= 0 then return CastQ(idx) end
-            return false
+            if idx ~= 0 and CastQ(idx, true) then
+                FQReset()
+                return true
+            end
         end
         if NOW > FQ.deadline then FQReset() end
         return true
     end
 
-    if not Menu.flashQ.key:Value() then return false end
-    if not S.qR or S.hooked or SentTick[SQ] == TICK then return false end
-    if not FlashReady() then return false end
+    if not Menu.flashQ.key:Value() then
+        FQ.why = ""
+        return false
+    end
+    if not S.qR or S.hooked or SentTick[SQ] == TICK then
+        FQ.why = "q"
+        return false
+    end
+    if not FlashReady() then
+        FQ.why = "cd"
+        return false
+    end
 
     local pick, pickD = 0, math_huge
+    local band = 0
     local cx, cz, fx, fz
     local lo = (Menu.flashQ.onlyOut:Value() and QCastRange()) or 0
     local lo2 = lo * lo
@@ -548,16 +561,23 @@ local function FlashQ()
     local hi2 = hi * hi
     for i = 1, EHn do
         local d2 = EHd2[i]
-        if d2 > lo2 and d2 <= hi2 and d2 < pickD then
-            local a, b, c, d = FQSolve(i)
-            if a then
-                pick, pickD = i, d2
-                cx, cz, fx, fz = a, b, c, d
+        if d2 > lo2 and d2 <= hi2 then
+            band = band + 1
+            if d2 < pickD then
+                local a, b, c, d = FQSolve(i)
+                if a then
+                    pick, pickD = i, d2
+                    cx, cz, fx, fz = a, b, c, d
+                end
             end
         end
     end
-    if pick == 0 then return false end
+    if pick == 0 then
+        FQ.why = (band > 0 and "hit") or "band"
+        return false
+    end
 
+    FQ.why = ""
     FQ.id = EHo[pick].networkID or 0
     FQ.fx, FQ.fz = fx, fz
     FQ.px, FQ.pz = S.x, S.z
@@ -769,7 +789,13 @@ local function DrawPanel()
     DrawText((S.hooked and "HOOKED") or "hook", 12, x + 10, y + 8, (S.hooked and COL_HOOK) or COL_OFF)
     DrawText((AHn > 0 and string_format("ALLIES %d", AHn)) or "allies 0", 12, x + 110, y + 8, COL_OFF)
     local fr = FlashReady()
-    DrawText((fr and "FLASH") or "flash", 12, x + 210, y + 8, (fr and COL_FQ) or COL_OFF)
+    local ftxt = (fr and "FLASH") or "flash"
+    if FQ.stage ~= 0 then
+        ftxt = ftxt .. " >"
+    elseif FQ.why ~= "" then
+        ftxt = ftxt .. " " .. FQ.why
+    end
+    DrawText(ftxt, 12, x + 205, y + 8, (fr and COL_FQ) or COL_OFF)
 
     for i = 1, 4 do
         DrawText(PC.cdText[i], 12, x + 10 + (i - 1) * 72, y + 32, (PC.cdReady[i] and COL_RDY) or COL_CD)
