@@ -367,7 +367,6 @@ local function ProfRoll()
     Prof.frames = Prof.frames + 1
     if Prof.frames < PROF_WINDOW then return end
     local total = 0
-    local worldMs = 0
     local parts = Prof.parts
     if not parts then
         parts = {}
@@ -376,7 +375,6 @@ local function ProfRoll()
     for i = 1, PROF_N do
         local key = PROF_KEYS[i]
         local ms = Prof[key] * 1000 / Prof.frames
-        if i == 1 then worldMs = ms end
         total = total + ms
         parts[i] = format("%s %.2f", key, ms)
         Prof[key] = 0
@@ -386,17 +384,12 @@ local function ProfRoll()
     local samples = Prof.samples
     local sum = Prof.sum
     local labels = Prof.labels
-    local swept = 0
     for i = 1, PROF_CN do
         local mean = (samples > 0 and sum[i] / samples) or 0
-        if i >= 5 then swept = swept + mean end
         labels[i] = format("%s %.1f", PROF_COUNTS[i], mean)
         sum[i] = 0
     end
     Prof.samples = 0
-    if swept >= 1 then
-        Prof.text = Prof.text .. format("  | %.0f swept, %.2fus each", swept, worldMs * 1000 / swept)
-    end
     Prof.frames = 0
     local lk = _G.Lowkey
     if lk and lk.Log then
