@@ -331,6 +331,7 @@ local Palette = {
 }
 
 local Frame = { n = 0, draw = 0 }
+local Announced = false
 
 local CLOCK = os and os.clock
 local PROF_WINDOW = 256
@@ -2767,6 +2768,14 @@ Callback.Add("Tick", function()
     local t = prof and CLOCK()
     Walker:GetModes()
     World:Refresh()
+    if not Announced then
+        local r = myHero.range
+        if r and r > 0 then
+            Announced = true
+            print(format("[LowkeyOrbwalker] v%s ready | %s | range %d | ping %dms",
+                tostring(__version__), MY_NAME, floor(MyAttackRange(nil)), Net.ms))
+        end
+    end
     Timing:Observe()
     local resetHook = Hooks.AttackReset
     if resetHook and resetHook() then
@@ -2832,8 +2841,6 @@ Callback.Add("UnLoad", function()
     Input:ReleaseTco()
 end)
 
-print("[LowkeyOrbwalker] v" .. __version__ .. " ready | " .. MY_NAME
-    .. " | range " .. tostring(floor(MyAttackRange(nil)))
-    .. " | ping " .. tostring(Net.ms) .. "ms")
+print("[LowkeyOrbwalker] v" .. __version__ .. " loaded | " .. MY_NAME)
 
 return _G.SDK
