@@ -47,6 +47,7 @@ local HOOK_MARK = 1.5
 local FLASH_RANGE = 400
 local FLASH_MOVED2 = 200 * 200
 local FLASH_NAMES = { ["SummonerFlash"] = true, ["SummonerFlash_Jade"] = true }
+local HOOK_SCAN2 = (Q_RANGE + FLASH_RANGE) * (Q_RANGE + FLASH_RANGE)
 
 local Q_BASE = { 100, 150, 200, 250, 300 }
 local Q_AP = 0.9
@@ -335,15 +336,18 @@ local function SyncEnemies()
                 EHdash[n] = false
             end
 
-            local bc = h.buffCount
-            if bc then
-                for b = 0, bc - 1 do
-                    local buff = h:GetBuff(b)
-                    if buff and buff.count and buff.count > 0 and buff.name then
-                        local bn = string_lower(buff.name)
-                        if bn == BUFF_HOOK then
-                            local exp = buff.expireTime
-                            if exp and exp > NOW then S.hookLeft = exp - NOW end
+            if S.hookLeft == 0 and EHd2[n] <= HOOK_SCAN2 then
+                local bc = h.buffCount
+                if bc then
+                    for b = 0, bc - 1 do
+                        local buff = h:GetBuff(b)
+                        if buff and buff.count and buff.count > 0 and buff.name then
+                            local bn = string_lower(buff.name)
+                            if bn == BUFF_HOOK then
+                                local exp = buff.expireTime
+                                if exp and exp > NOW then S.hookLeft = exp - NOW end
+                                break
+                            end
                         end
                     end
                 end

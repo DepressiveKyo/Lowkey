@@ -748,10 +748,14 @@ function World:Refresh()
     if mc and mc > 0 and mc < 1000 then
         for i = 1, mc do
             local u = MinionAt(i)
-            if u and u.valid and u.visible and u.isTargetable and not u.dead and not u.isImmortal then
+            local near = false
+            if u and u.valid then
                 local x, z = Pos2(u)
                 local dx, dz = x - mx, z - mz
-                if dx * dx + dz * dz <= SCAN_RANGE2 then
+                near = dx * dx + dz * dz <= SCAN_RANGE2
+            end
+            if near and u.visible and u.isTargetable and not u.dead and not u.isImmortal then
+                do
                     local team = u.team
                     handleN = handleN + 1
                     local h = u.handle
@@ -2313,13 +2317,15 @@ function Walker:OnDraw()
         Draw.Circle(MousePos(), 120, 1, Palette.cursor)
     end
     if d.enemyRange:Value() then
+        local mx, mz = pos.x, pos.z
         for i = 1, World.enemyN do
             local u = World.enemy[i]
             if u.valid and OnScreen(u) then
                 local p = u.pos
                 if p then
                     local r = AttackRange(u, myHero)
-                    local inside = DistSq(u, myHero) <= r * r
+                    local dx, dz = p.x - mx, p.z - mz
+                    local inside = dx * dx + dz * dz <= r * r
                     Draw.Circle(p, r, 1, inside and Palette.enemyRange or Palette.range)
                 end
             end
