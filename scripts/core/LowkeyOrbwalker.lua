@@ -12,6 +12,8 @@ local HUGE = math.huge
 local PI = math.pi
 local sqrt = math.sqrt
 local floor = math.floor
+local format = string.format
+local concat = table.concat
 local ceil = math.ceil
 local atan = math.atan
 
@@ -220,6 +222,22 @@ local function Attackable(u)
     return (u and u.valid and u.visible and u.isTargetable and not u.dead and not u.isImmortal) and true or false
 end
 
+local function OnScreen(u)
+    local p = u.pos2D
+    return p ~= nil and p.onScreen == true
+end
+
+local ScreenW, ScreenH = 0, 0
+
+local function Screen()
+    if ScreenW > 0 then return ScreenW, ScreenH end
+    local res = Resolution and Resolution()
+    if res and res.x and res.y and res.x > 0 then
+        ScreenW, ScreenH = res.x, res.y
+    end
+    return ScreenW, ScreenH
+end
+
 local function IsEnemyUnit(u) return u.isEnemy end
 local function IsAllyUnit(u) return u.isAlly end
 local function IsNotTurret(u) return u.type ~= Obj_AI_Turret end
@@ -285,6 +303,7 @@ local function BuildMenu()
     root.draws:MenuElement({ id = "selected", name = "Clicked target", value = true })
     root.draws:MenuElement({ id = "cursor", name = "Cursor", value = false })
     root.draws:MenuElement({ id = "mode", name = "Active mode", value = true })
+    root.draws:MenuElement({ id = "profile", name = "Frame cost (ms per section)", value = false })
 
     root:MenuElement({ name = "", type = SPACE, id = "gap" })
     root:MenuElement({
@@ -312,6 +331,41 @@ local Palette = {
 }
 
 local Frame = { n = 0, draw = 0 }
+
+local CLOCK = os and os.clock
+local PROF_WINDOW = 128
+local PROF_KEYS = { "world", "select", "farm", "champT", "input", "walk", "ownD", "champD" }
+local PROF_N = 8
+local Prof = { frames = 0, text = "profile warming up" }
+for i = 1, PROF_N do Prof[PROF_KEYS[i]] = 0 end
+
+local function ProfOn()
+    return CLOCK ~= nil and Menu.draws ~= nil and Menu.draws.profile:Value() == true
+end
+
+local function ProfAdd(key, started)
+    Prof[key] = Prof[key] + (CLOCK() - started)
+end
+
+local function ProfRoll()
+    Prof.frames = Prof.frames + 1
+    if Prof.frames < PROF_WINDOW then return end
+    local total = 0
+    local parts = Prof.parts
+    if not parts then
+        parts = {}
+        Prof.parts = parts
+    end
+    for i = 1, PROF_N do
+        local key = PROF_KEYS[i]
+        local ms = Prof[key] * 1000 / Prof.frames
+        total = total + ms
+        parts[i] = format("%s %.2f", key, ms)
+        Prof[key] = 0
+    end
+    Prof.text = format("frame %.2fms | %s", total, concat(parts, "  "))
+    Prof.frames = 0
+end
 
 local Net = { ms = 45, s = 0.045, half = 0.0225, grace = 0.14 }
 
@@ -1019,6 +1073,8 @@ function Timing:IsAttackName(name)
 end
 
 function Timing:Observe()
+    if self.seenFrame == Frame.n then return end
+    self.seenFrame = Frame.n
     local s = myHero.activeSpell
     if
         s
@@ -1831,9 +1887,9 @@ local function ScreenOf(a)
         if name then
             local low = name:lower()
             if low:find("chaosminion", 1, true) or low:find("orderminion", 1, true) then
-                local res = Resolution()
-                if res and res.y then
-                    p.y = p.y - (25 / 1440) * res.y
+                local _, sh = Screen()
+                if sh > 0 then
+                    p.y = p.y - (25 / 1440) * sh
                 end
             end
         end
@@ -2047,6 +2103,8 @@ function Walker:HasMode(mode)
 end
 
 function Walker:GetModes()
+    if self.modeFrame == Frame.n then return ModeState end
+    self.modeFrame = Frame.n
     ModeState[MODE_COMBO] = self:HasMode(MODE_COMBO)
     ModeState[MODE_HARASS] = self:HasMode(MODE_HARASS)
     ModeState[MODE_LANECLEAR] = self:HasMode(MODE_LANECLEAR)
@@ -2253,10 +2311,13 @@ function Walker:OnDraw()
     if d.enemyRange:Value() then
         for i = 1, World.enemyN do
             local u = World.enemy[i]
-            if u.valid and u.pos then
-                local r = AttackRange(u, myHero)
-                local inside = DistSq(u, myHero) <= r * r
-                Draw.Circle(u.pos, r, 1, inside and Palette.enemyRange or Palette.range)
+            if u.valid and OnScreen(u) then
+                local p = u.pos
+                if p then
+                    local r = AttackRange(u, myHero)
+                    local inside = DistSq(u, myHero) <= r * r
+                    Draw.Circle(p, r, 1, inside and Palette.enemyRange or Palette.range)
+                end
             end
         end
     end
@@ -2268,21 +2329,24 @@ function Walker:OnDraw()
     end
     if d.farm:Value() then
         for i = 1, Farm.minionN do
-            local u = Farm.minion[i]
-            if Alive(u) and u.pos then
-                local r = u.boundingRadius or 62
-                if r < 62 then r = 62 end
-                if Farm.killable[i] then
-                    Draw.Circle(u.pos, r, 2, Palette.killable)
-                elseif Farm.nearly[i] then
-                    Draw.Circle(u.pos, r, 1, Palette.nearly)
+            local kill = Farm.killable[i]
+            local near = kill or Farm.nearly[i]
+            if near then
+                local u = Farm.minion[i]
+                if Alive(u) and OnScreen(u) then
+                    local p = u.pos
+                    if p then
+                        local r = u.boundingRadius or 62
+                        if r < 62 then r = 62 end
+                        Draw.Circle(p, r, (kill and 2) or 1, (kill and Palette.killable) or Palette.nearly)
+                    end
                 end
             end
         end
     end
     if d.mode:Value() then
-        local res = Resolution()
-        if res and res.x and res.y then
+        local sw, sh = Screen()
+        if sw > 0 then
             local label = "idle"
             if ModeState[MODE_COMBO] then label = "combo"
             elseif ModeState[MODE_HARASS] then label = "harass"
@@ -2290,7 +2354,13 @@ function Walker:OnDraw()
             elseif ModeState[MODE_JUNGLECLEAR] then label = "jungle"
             elseif ModeState[MODE_LANECLEAR] then label = "lane clear"
             elseif ModeState[MODE_FLEE] then label = "flee" end
-            Draw.Text(label, 14, res.x / 2 - 30, res.y - 240, self.IsNone and Palette.dim or Palette.text)
+            Draw.Text(label, 14, sw / 2 - 30, sh - 240, self.IsNone and Palette.dim or Palette.text)
+        end
+    end
+    if d.profile:Value() then
+        local sw, sh = Screen()
+        if sw > 0 then
+            Draw.Text(Prof.text, 13, 20, sh - 300, Palette.text)
         end
     end
 end
@@ -2553,6 +2623,8 @@ end)
 Callback.Add("Tick", function()
     Frame.n = Frame.n + 1
     Net:Refresh()
+    local prof = ProfOn()
+    local t = prof and CLOCK()
     World:Refresh()
     Walker:GetModes()
     Timing:Observe()
@@ -2560,22 +2632,53 @@ Callback.Add("Tick", function()
     if resetHook and resetHook() then
         Timing.reset = true
     end
+    if prof then
+        ProfAdd("world", t)
+        t = CLOCK()
+    end
     Selector:Refresh()
+    if prof then
+        ProfAdd("select", t)
+        t = CLOCK()
+    end
     Farm:Refresh()
+    if prof then
+        ProfAdd("farm", t)
+        t = CLOCK()
+    end
     for i = 1, #ticks do
         ticks[i]()
     end
+    if prof then ProfAdd("champT", t) end
 end)
 
 Callback.Add("Draw", function()
     if World.frame < 0 then return end
     Frame.draw = Frame.draw + 1
+    local prof = ProfOn()
+    local t = prof and CLOCK()
     Input:OnTick()
     Timing:Observe()
+    if prof then
+        ProfAdd("input", t)
+        t = CLOCK()
+    end
     Walker:OnTick()
+    if prof then
+        ProfAdd("walk", t)
+        t = CLOCK()
+    end
     Walker:OnDraw()
+    if prof then
+        ProfAdd("ownD", t)
+        t = CLOCK()
+    end
     for i = 1, #draws do
         draws[i]()
+    end
+    if prof then
+        ProfAdd("champD", t)
+        ProfRoll()
     end
 end)
 
