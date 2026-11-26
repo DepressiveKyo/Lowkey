@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -660,8 +660,22 @@ local function OnTick()
     end
 end
 
-Callback.Add("Tick", OnTick)
-Callback.Add("Draw", OnDraw)
+local function Hook()
+    local sdk = _G.SDK
+    local ticks = sdk and sdk.OnTick
+    local draws = sdk and sdk.OnDraw
+    if type(ticks) == "table" and type(draws) == "table" then
+        ticks[#ticks + 1] = OnTick
+        draws[#draws + 1] = OnDraw
+        return "SDK"
+    end
+    Callback.Add("Tick", OnTick)
+    Callback.Add("Draw", OnDraw)
+    return "raw"
+end
+
+local HOOK = Hook()
 
 InitPred()
-print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred " .. ((PredQ and "on") or "waiting"))
+print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred "
+    .. ((PredQ and "on") or "waiting") .. " | hook " .. HOOK)
