@@ -1,7 +1,7 @@
 if _G.__LOWKEY_SMITE_LOADED then return end
 _G.__LOWKEY_SMITE_LOADED = true
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local SCRIPT_NAME = "Lowkey Smite"
 
 local MinionCount = Game.MinionCount
@@ -53,6 +53,25 @@ local Monsters = {
 local Epic = { baron = true, atakhan = true, elder = true, herald = true, grubs = true, dragon = true }
 
 local AimOffsets = { { 0, 0 }, { 0, -25 }, { 0, -45 }, { -18, -35 }, { 18, -35 } }
+
+local COL_ON = Draw.Color(255, 120, 255, 120)
+local COL_OFF = Draw.Color(255, 255, 90, 90)
+local COL_WAIT = Draw.Color(255, 235, 200, 90)
+local COL_RANGE = Draw.Color(200, 255, 220, 60)
+local COL_KILL = Draw.Color(255, 255, 60, 60)
+local COL_SOON = Draw.Color(255, 255, 200, 60)
+local COL_LIVE = Draw.Color(255, 160, 255, 160)
+
+local ScreenW, ScreenH = 0, 0
+
+local function Screen()
+    if ScreenW > 0 then return ScreenW, ScreenH end
+    local res = Game.Resolution and Game.Resolution()
+    if res and res.x and res.y and res.x > 0 then
+        ScreenW, ScreenH = res.x, res.y
+    end
+    return ScreenW, ScreenH
+end
 
 local function HasSmite()
     for slot = SUMMONER_1, SUMMONER_2 do
@@ -134,6 +153,7 @@ function LowkeySmite:LoadMenu()
     self.Menu.draw:MenuElement({ id = "range", name = "Smite range", value = true })
     self.Menu.draw:MenuElement({ id = "targets", name = "Monster health vs Smite", value = true })
     self.Menu.draw:MenuElement({ id = "status", name = "Smite status", value = true })
+    self.Menu.draw:MenuElement({ id = "fixed", name = "Status fixed on screen", value = true })
 end
 
 function LowkeySmite:Hook()
@@ -358,15 +378,28 @@ function LowkeySmite:Draw()
     if not state.slot then return end
 
     if self.Menu.draw.range:Value() and state.ready then
-        Draw.Circle(myHero.pos, state.range, 1, Draw.Color(200, 255, 220, 60))
+        Draw.Circle(myHero.pos, state.range, 1, COL_RANGE)
     end
 
     if self.Menu.draw.status:Value() then
-        local p = myHero.pos2D
-        if p and p.onScreen then
-            local text = (state.ready and format("Smite %d dmg", state.damage)) or "Smite not ready"
-            Draw.Text(text, 18, p.x - 60, p.y + 30,
-                (state.ready and Draw.Color(255, 255, 255, 255)) or Draw.Color(255, 255, 90, 90))
+        local text, color
+        if self.Menu.enabled:Value() ~= true then
+            text, color = "SMITE OFF", COL_OFF
+        elseif state.ready then
+            text, color = format("SMITE ON  %d", state.damage), COL_ON
+        else
+            text, color = "SMITE ON  cd", COL_WAIT
+        end
+        if self.Menu.draw.fixed:Value() then
+            local w, h = Screen()
+            if w > 0 then
+                Draw.Text(text, 18, w / 2 - 150, h - 248, color)
+            end
+        else
+            local p = myHero.pos2D
+            if p and p.onScreen then
+                Draw.Text(text, 18, p.x - 60, p.y + 30, color)
+            end
         end
     end
 
@@ -380,11 +413,11 @@ function LowkeySmite:Draw()
             if p and p.onScreen then
                 local color
                 if entry.killable and entry.inRange then
-                    color = Draw.Color(255, 255, 60, 60)
+                    color = COL_KILL
                 elseif entry.killable then
-                    color = Draw.Color(255, 255, 200, 60)
+                    color = COL_SOON
                 else
-                    color = Draw.Color(255, 160, 255, 160)
+                    color = COL_LIVE
                 end
                 Draw.Text(format("%d / %d", floor(entry.health), floor(entry.lethal)), 16, p.x - 28, p.y - 26, color)
                 if entry.killable and entry.inRange then
