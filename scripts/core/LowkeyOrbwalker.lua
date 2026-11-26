@@ -618,6 +618,18 @@ function Combat:GetAutoAttackDamage(from, target, respectPassives, static)
     return out
 end
 
+local UseDistance = nil
+
+local function Near(u, byDistance, mx, mz)
+    if byDistance then
+        local d = u.distance
+        return d ~= nil and d <= SCAN_RANGE
+    end
+    local x, z = Pos2(u)
+    local dx, dz = x - mx, z - mz
+    return dx * dx + dz * dz <= SCAN_RANGE2
+end
+
 local World = {
     frame = -1,
     heroN = 0, hero = {},
@@ -717,6 +729,9 @@ function World:Refresh()
         for i = 1, hc do
             local u = HeroAt(i)
             if u and u.valid then
+                if UseDistance == nil then
+                    UseDistance = type(u.distance) == "number"
+                end
                 self:Announce(u)
                 if u.visible and u.isTargetable and not u.dead then
                     heroN = heroN + 1
@@ -744,18 +759,22 @@ function World:Refresh()
     local handleKeys, handleMap = self.handleKeys, self.handleMap
     for k in pairs(handleMap) do handleMap[k] = nil end
 
+    local byDistance = UseDistance
     local mc = MinionCount()
     if mc and mc > 0 and mc < 1000 then
         for i = 1, mc do
             local u = MinionAt(i)
-            local near = false
             if u and u.valid then
-                local x, z = Pos2(u)
-                local dx, dz = x - mx, z - mz
-                near = dx * dx + dz * dz <= SCAN_RANGE2
-            end
-            if near and u.visible and u.isTargetable and not u.dead and not u.isImmortal then
-                do
+                local near
+                if byDistance then
+                    local d = u.distance
+                    near = d ~= nil and d <= SCAN_RANGE
+                else
+                    local x, z = Pos2(u)
+                    local dx, dz = x - mx, z - mz
+                    near = dx * dx + dz * dz <= SCAN_RANGE2
+                end
+                if near and u.visible and u.isTargetable and not u.dead and not u.isImmortal then
                     local team = u.team
                     handleN = handleN + 1
                     local h = u.handle
@@ -788,13 +807,9 @@ function World:Refresh()
         if wc and wc > 0 and wc < 500 then
             for i = 1, wc do
                 local u = WardAt(i)
-                if u and u.isEnemy and Attackable(u) then
-                    local x, z = Pos2(u)
-                    local dx, dz = x - mx, z - mz
-                    if dx * dx + dz * dz <= SCAN_RANGE2 then
-                        wardN = wardN + 1
-                        ward[wardN] = u
-                    end
+                if u and u.isEnemy and Near(u, byDistance, mx, mz) and Attackable(u) then
+                    wardN = wardN + 1
+                    ward[wardN] = u
                 end
             end
         end
@@ -810,23 +825,19 @@ function World:Refresh()
     if tc and tc > 0 and tc < 200 then
         for i = 1, tc do
             local u = TurretAt(i)
-            if u and Attackable(u) then
-                local x, z = Pos2(u)
-                local dx, dz = x - mx, z - mz
-                if dx * dx + dz * dz <= SCAN_RANGE2 then
-                    turretN = turretN + 1
-                    turret[turretN] = u
-                    local h = u.handle
-                    handleN = handleN + 1
-                    handleKeys[handleN] = h
-                    handleMap[h] = u
-                    if u.isEnemy then
-                        structN = structN + 1
-                        struct[structN] = u
-                    elseif self.allyTurret == nil then
-                        self.allyTurret = u
-                        self.allyTurretHandle = h
-                    end
+            if u and Near(u, byDistance, mx, mz) and Attackable(u) then
+                turretN = turretN + 1
+                turret[turretN] = u
+                local h = u.handle
+                handleN = handleN + 1
+                handleKeys[handleN] = h
+                handleMap[h] = u
+                if u.isEnemy then
+                    structN = structN + 1
+                    struct[structN] = u
+                elseif self.allyTurret == nil then
+                    self.allyTurret = u
+                    self.allyTurretHandle = h
                 end
             end
         end
@@ -835,13 +846,9 @@ function World:Refresh()
     self:ScanBuildings()
     for i = 1, self.buildingN do
         local u = self.buildings[i]
-        if u and u.isEnemy and Attackable(u) then
-            local x, z = Pos2(u)
-            local dx, dz = x - mx, z - mz
-            if dx * dx + dz * dz <= SCAN_RANGE2 then
-                structN = structN + 1
-                struct[structN] = u
-            end
+        if u and u.isEnemy and Near(u, byDistance, mx, mz) and Attackable(u) then
+            structN = structN + 1
+            struct[structN] = u
         end
     end
 

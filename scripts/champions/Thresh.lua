@@ -540,27 +540,24 @@ local function FlashQ()
     end
 
     local pick, pickD = 0, math_huge
-    local band = 0
-    local fx, fz
     local lo = (Menu.flashQ.onlyOut:Value() and QCastRange()) or 0
     local lo2 = lo * lo
     local hi = FQRange()
     local hi2 = hi * hi
     for i = 1, EHn do
         local d2 = EHd2[i]
-        if d2 > lo2 and d2 <= hi2 then
-            band = band + 1
-            if d2 < pickD then
-                local a, b = FQSolve(i)
-                if a then
-                    pick, pickD = i, d2
-                    fx, fz = a, b
-                end
-            end
+        if d2 > lo2 and d2 <= hi2 and d2 < pickD then
+            pick, pickD = i, d2
         end
     end
     if pick == 0 then
-        FQ.why = (band > 0 and "hit") or "band"
+        FQ.why = "band"
+        return false
+    end
+
+    local fx, fz = FQSolve(pick)
+    if not fx then
+        FQ.why = "hit"
         return false
     end
 

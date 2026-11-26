@@ -2,7 +2,7 @@ if _G.__LOWKEY_LILLIA_LOADED then return end
 _G.__LOWKEY_LILLIA_LOADED = true
 if myHero.charName ~= "Lillia" then return end
 
-local VERSION = "1.2"
+local VERSION = "1.3"
 local SCRIPT_NAME = "Lowkey Lillia"
 
 local PredTries = 0
@@ -61,6 +61,9 @@ local NAME_R = "LilliaR"
 local BUFF_DUST = "lilliapdot"
 local BUFF_PRANCE = "lilliaprancestack"
 local BUFF_SLEEP = "lilliarsleep"
+local DUST_LEN = #BUFF_DUST
+local SLEEP_LEN = #BUFF_SLEEP
+local SCAN_REACH2 = (E_REACH + 100) * (E_REACH + 100)
 
 local SELF_CAST = {}
 
@@ -362,23 +365,32 @@ local function SyncEnemies()
             EHband[n] = band
             if band == 2 then edge = edge + 1 end
 
-            EHdust[n] = false
-            EHsleep[n] = false
-            local bc = h.buffCount
-            if bc then
-                for b = 0, bc - 1 do
-                    local buff = h:GetBuff(b)
-                    if buff and buff.name and buff.count and buff.count > 0 then
-                        local bn = string_lower(buff.name)
-                        if bn == BUFF_DUST then
-                            EHdust[n] = true
-                        elseif bn == BUFF_SLEEP then
-                            EHsleep[n] = true
+            local dust, sleep = false, false
+            if EHd2[n] <= SCAN_REACH2 then
+                local bc = h.buffCount
+                if bc then
+                    for b = 0, bc - 1 do
+                        local buff = h:GetBuff(b)
+                        if buff and buff.count and buff.count > 0 then
+                            local nm = buff.name
+                            local ln = nm and #nm
+                            if ln == DUST_LEN or ln == SLEEP_LEN then
+                                local bn = string_lower(nm)
+                                if bn == BUFF_DUST then
+                                    dust = true
+                                    if sleep then break end
+                                elseif bn == BUFF_SLEEP then
+                                    sleep = true
+                                    if dust then break end
+                                end
+                            end
                         end
                     end
                 end
             end
-            if EHdust[n] then dusted = dusted + 1 end
+            EHdust[n] = dust
+            EHsleep[n] = sleep
+            if dust then dusted = dusted + 1 end
 
             if tgtId and h.networkID == tgtId then ti = n end
         end
