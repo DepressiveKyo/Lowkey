@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.0"
+local VERSION = "1.2"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -29,6 +29,8 @@ local GameMissileCount = Game.MissileCount
 local GameMissile = Game.Missile
 
 local CastSpell = Control.CastSpell
+local SetCursorPos = Control.SetCursorPos
+local CursorBackX, CursorBackY = nil, nil
 local DrawCircle = Draw.Circle
 local DrawText = Draw.Text
 local DrawColor = Draw.Color
@@ -442,6 +444,56 @@ local function AckWindow()
     return 0.2
 end
 
+local TgtTick = -1
+local TgtCache = {}
+
+local function IndexOfUnit(unit)
+    if not unit then return 0 end
+    local id = unit.networkID
+    if id == nil then return 0 end
+    for i = 1, EHn do
+        local o = EHo[i]
+        if o and o.networkID == id then return i end
+    end
+    return 0
+end
+
+local function Target(range, range2)
+    if TgtTick ~= TICK then
+        TgtTick = TICK
+        for k in pairs(TgtCache) do TgtCache[k] = nil end
+    end
+    local hit = TgtCache[range]
+    if hit then return hit end
+
+    local pick = 0
+    local i = S.ti
+    if i ~= 0 and EHd2[i] <= range2 then
+        pick = i
+    else
+        local sdk = _G.SDK
+        if sdk and sdk.TargetSelector then
+            local t = sdk.TargetSelector:GetTarget(range)
+            if t and t.team == TEAM_ENEMY then
+                local j = IndexOfUnit(t)
+                if j ~= 0 and EHd2[j] <= range2 then pick = j end
+            end
+        end
+        if pick == 0 then
+            local bestD = math_huge
+            for k = 1, EHn do
+                local d2 = EHd2[k]
+                if d2 <= range2 and d2 < bestD then
+                    pick, bestD = k, d2
+                end
+            end
+        end
+    end
+
+    TgtCache[range] = pick
+    return pick
+end
+
 local function SlotFree(slot)
     local pc = PendCt[slot]
     if pc == nil then return true end
@@ -477,9 +529,28 @@ local function Send(hk, slot, x, z)
     return true
 end
 
+local function SaveCursor()
+    if CursorBackX then return end
+    local cp = _G.cursorPos
+    if cp and type(cp.x) == "number" and type(cp.y) == "number" then
+        CursorBackX, CursorBackY = cp.x, cp.y
+    end
+end
+
+local function RestoreCursor()
+    if not CursorBackX then return end
+    SetCursorPos(CursorBackX, CursorBackY)
+    CursorBackX, CursorBackY = nil, nil
+end
+
 local function SendUnit(hk, slot, unit)
     if not SlotFree(slot) then return false end
-    if CastSpell(hk, unit) == false then return false end
+    local p = unit.pos
+    if p == nil then return false end
+    local p2 = unit.pos2D
+    if p2 == nil or p2.onScreen ~= true then return false end
+    SaveCursor()
+    if CastSpell(hk, p) == false then return false end
     MarkSent(slot)
     return true
 end
@@ -696,25 +767,37 @@ end
 
 local function RunCombo()
     local node = Menu.combo
-    local i = S.ti
 
-    if node.useE:Value() and i ~= 0 and CastE(i) then
-        if node.eQ:Value() and S.qR then CastQ(i) end
-        return
+    if node.useE:Value() then
+        local e = Target(E_RANGE, E_RANGE2)
+        if e ~= 0 and CastE(e) then
+            if node.eQ:Value() and S.qR then
+                local q = Target(Q_RANGE, Q_RANGE2)
+                if q ~= 0 then CastQ(q) end
+            end
+            return
+        end
     end
 
     if S.hasQ3 then
-        if node.useQ3:Value() and Q3Worth() and CastQ(i) then return end
+        if node.useQ3:Value() and Q3Worth() then
+            local q3 = Target(Q3_RANGE, Q3_RANGE2)
+            if q3 ~= 0 and CastQ(q3) then return end
+        end
         return
     end
 
-    if node.useQ:Value() and CastQ(i) then return end
+    if node.useQ:Value() then
+        local q = Target(Q_RANGE, Q_RANGE2)
+        if q ~= 0 and CastQ(q) then return end
+    end
 end
 
 local function RunHarass()
     if not Menu.harass.useQ:Value() then return end
     if Menu.harass.q3Only:Value() and not S.hasQ3 then return end
-    CastQ(S.ti)
+    local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
+    if i ~= 0 then CastQ(i) end
 end
 
 local PC = {
@@ -823,6 +906,7 @@ local function OnDraw()
 end
 
 local function OnTick()
+    RestoreCursor()
     if myHero.dead then return end
     TICK = TICK + 1
     InitPred()
@@ -844,7 +928,10 @@ local function OnTick()
     elseif S.mode == 2 then
         RunHarass()
     elseif S.mode == 3 then
-        if Menu.clear.useQ:Value() and S.qR and S.ti ~= 0 then CastQ(S.ti) end
+        if Menu.clear.useQ:Value() and S.qR then
+            local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
+            if i ~= 0 then CastQ(i) end
+        end
     end
 end
 
