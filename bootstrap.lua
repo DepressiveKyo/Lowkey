@@ -206,14 +206,11 @@ function Lowkey:Crash(who, message)
     end
     if not crashHeader then
         crashHeader = true
-        crashFile:write(format("
-=== %s | %s@%s | %s ===
-", Stamp(), REPO,
+        crashFile:write(format("\n=== %s | %s@%s | %s ===\n", Stamp(), REPO,
             tostring(self.manifest and self.manifest.version or "?"),
             tostring(myHero and myHero.charName or "?")))
     end
-    crashFile:write(format("[%7.1f] %s
-", Elapsed(), text))
+    crashFile:write(format("[%7.1f] %s\n", Elapsed(), text))
     crashFile:flush()
     return true
 end
