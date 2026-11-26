@@ -333,7 +333,7 @@ local Palette = {
 local Frame = { n = 0, draw = 0 }
 
 local CLOCK = os and os.clock
-local PROF_WINDOW = 128
+local PROF_WINDOW = 256
 local PROF_KEYS = { "world", "select", "farm", "champT", "input", "walk", "ownD", "champD" }
 local PROF_N = 8
 local Prof = { frames = 0, text = "profile warming up" }
@@ -347,7 +347,7 @@ local function ProfAdd(key, started)
     Prof[key] = Prof[key] + (CLOCK() - started)
 end
 
-local function ProfRoll()
+local function ProfRoll(counts)
     Prof.frames = Prof.frames + 1
     if Prof.frames < PROF_WINDOW then return end
     local total = 0
@@ -365,6 +365,10 @@ local function ProfRoll()
     end
     Prof.text = format("frame %.2fms | %s", total, concat(parts, "  "))
     Prof.frames = 0
+    local lk = _G.Lowkey
+    if lk and lk.Log then
+        lk:Log("perf", (counts and (Prof.text .. " | " .. counts)) or Prof.text)
+    end
 end
 
 local Net = { ms = 45, s = 0.045, half = 0.0225, grace = 0.14 }
@@ -2678,7 +2682,8 @@ Callback.Add("Draw", function()
     end
     if prof then
         ProfAdd("champD", t)
-        ProfRoll()
+        ProfRoll(format("enemies %d lane %d jungle %d farm %d",
+            World.enemyN or 0, World.laneN or 0, World.jungleN or 0, Farm.minionN or 0))
     end
 end)
 

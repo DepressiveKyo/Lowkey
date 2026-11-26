@@ -171,10 +171,8 @@ local Lowkey = {
 }
 _G.Lowkey = Lowkey
 
-local CRASH_LOG = LOCAL_ROOT .. "crash.log"
-local crashFile = nil
+local logFiles = {}
 local crashSeen = {}
-local crashHeader = false
 
 local function Stamp()
     if not os or not os.date then return "?" end
@@ -191,27 +189,30 @@ local function Elapsed()
     return 0
 end
 
+function Lowkey:Log(name, line)
+    local file = logFiles[name]
+    if file == false then return false end
+    if not file then
+        file = io.open(LOCAL_ROOT .. name .. ".log", "a")
+        if not file then
+            logFiles[name] = false
+            return false
+        end
+        logFiles[name] = file
+        file:write(format("\n=== %s | %s@%s | %s ===\n", Stamp(), REPO,
+            tostring(self.manifest and self.manifest.version or "?"),
+            tostring(myHero and myHero.charName or "?")))
+    end
+    file:write(format("[%7.1f] %s\n", Elapsed(), tostring(line)))
+    file:flush()
+    return true
+end
+
 function Lowkey:Crash(who, message)
     local text = tostring(who) .. " | " .. tostring(message)
     if crashSeen[text] then return false end
     crashSeen[text] = true
-    if crashFile == false then return true end
-    if not crashFile then
-        local f = io.open(CRASH_LOG, "a")
-        if not f then
-            crashFile = false
-            return true
-        end
-        crashFile = f
-    end
-    if not crashHeader then
-        crashHeader = true
-        crashFile:write(format("\n=== %s | %s@%s | %s ===\n", Stamp(), REPO,
-            tostring(self.manifest and self.manifest.version or "?"),
-            tostring(myHero and myHero.charName or "?")))
-    end
-    crashFile:write(format("[%7.1f] %s\n", Elapsed(), text))
-    crashFile:flush()
+    self:Log("crash", text)
     return true
 end
 
