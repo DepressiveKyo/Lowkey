@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.4"
+local VERSION = "1.5"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -149,6 +149,9 @@ Menu.combo:MenuElement({ id = "useQ3", name = "Use Q3 tornado", value = true })
 Menu.combo:MenuElement({ id = "q3Only", name = "Hold Q3 for a target in range", value = true })
 Menu.combo:MenuElement({ id = "useE", name = "Use E", value = true })
 Menu.combo:MenuElement({ id = "eQ", name = "Q right after an E dash", value = true })
+Menu.combo:MenuElement({ id = "gap", name = "E through minions to reach the target", value = true })
+Menu.combo:MenuElement({ id = "gapGain", name = "Only if the dash closes at least", value = 150, min = 50, max = 400, step = 25 })
+Menu.combo:MenuElement({ id = "gapMax", name = "Give up beyond", value = 1600, min = 600, max = 2500, step = 100 })
 
 Menu:MenuElement({ type = MENU, id = "dash", name = "E Dashing" })
 Menu.dash:MenuElement({ id = "minRange", name = "Only E beyond", value = 0, min = 0, max = 475, step = 25 })
@@ -462,7 +465,9 @@ end
 
 local function SyncMinions()
     local mode = S.mode
-    if mode ~= 2 and mode ~= 3 and mode ~= 4 then
+    local want = mode == 2 or mode == 3 or mode == 4
+        or (mode == 1 and Menu.combo.gap:Value() == true)
+    if not want then
         for i = 1, CMn do CMo[i] = nil end
         for i = 1, JMn do JMo[i] = nil end
         CMn, JMn = 0, 0
@@ -710,8 +715,7 @@ local function CastQ(i)
     return Send(HK_Q, SQ, x, z)
 end
 
-local function DashAllowed(i)
-    local x, z = EHx[i], EHz[i]
+local function DashAllowed(x, z, i)
     if not UnderTurret(x, z) then
         if CrowdAt(x, z, Menu.dash.crowd:Value()) then return false, "crowded" end
         return true, ""
@@ -740,7 +744,7 @@ local function CastE(i)
         S.why = "too close"
         return false
     end
-    local ok, why = DashAllowed(i)
+    local ok, why = DashAllowed(EHx[i], EHz[i], i)
     S.why = why
     if not ok then return false end
     return SendUnit(HK_E, SE, EHo[i])
@@ -894,6 +898,69 @@ local function Q3Worth()
     return false
 end
 
+local function Marked(unit)
+    local map = BuffMapOf(unit)
+    if not map then return false end
+    for m = 1, 3 do
+        if map[EMARKS[m]] then return true end
+    end
+    return false
+end
+
+local function Landing(ux, uz)
+    local dx, dz = ux - S.x, uz - S.z
+    local len = math_sqrt(dx * dx + dz * dz)
+    if len < 1 then return nil end
+    local k = EK.dash / len
+    return S.x + dx * k, S.z + dz * k
+end
+
+local function BestLanding(n, uo, ux, uz, tx, tz, best2, bu, bx, bz)
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local dx, dz = ux[i] - sx, uz[i] - sz
+        if dx * dx + dz * dz <= E_RANGE2 then
+            local lx, lz = Landing(ux[i], uz[i])
+            if lx then
+                local ex, ez = tx - lx, tz - lz
+                local d2 = ex * ex + ez * ez
+                if d2 < best2 then
+                    local u = uo[i]
+                    if not Marked(u) then
+                        best2, bu, bx, bz = d2, u, lx, lz
+                    end
+                end
+            end
+        end
+    end
+    return best2, bu, bx, bz
+end
+
+local function GapClose(i)
+    local node = Menu.combo
+    if not node.gap:Value() then return false end
+    if not S.eR or S.casting or SentTick[SE] == TICK then return false end
+    if JMn == 0 and CMn == 0 then return false end
+
+    local now2 = EHd2[i]
+    local reach = node.gapMax:Value()
+    if now2 > reach * reach then return false end
+    if now2 <= E_RANGE2 then return false end
+
+    local tx, tz = EHx[i], EHz[i]
+    local best2, bu, bx, bz = now2, nil, nil, nil
+    best2, bu, bx, bz = BestLanding(CMn, CMo, CMx, CMz, tx, tz, best2, bu, bx, bz)
+    best2, bu, bx, bz = BestLanding(JMn, JMo, JMx, JMz, tx, tz, best2, bu, bx, bz)
+    if not bu then return false end
+
+    if math_sqrt(now2) - math_sqrt(best2) < node.gapGain:Value() then return false end
+
+    local ok, why = DashAllowed(bx, bz, i)
+    S.why = why
+    if not ok then return false end
+    return SendUnit(HK_E, SE, bu)
+end
+
 local function RunCombo()
     local node = Menu.combo
 
@@ -906,6 +973,8 @@ local function RunCombo()
             end
             return
         end
+        local far = S.ti
+        if far ~= 0 and GapClose(far) then return end
     end
 
     if S.hasQ3 then
@@ -972,15 +1041,6 @@ local function FarmQ(useQ3, useQ, q3Min)
     if not bx then bx, bz = BestArc(CMn, CMx, CMz) end
     if not bx then return false end
     return Send(HK_Q, SQ, bx, bz)
-end
-
-local function Marked(unit)
-    local map = BuffMapOf(unit)
-    if not map then return false end
-    for m = 1, 3 do
-        if map[EMARKS[m]] then return true end
-    end
-    return false
 end
 
 local function EKills(unit)
