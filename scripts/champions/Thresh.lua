@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.6"
+local VERSION = "1.7"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -122,7 +122,7 @@ Menu.pred:MenuElement({ id = "eHit", name = "E Hit Chance", value = 1, drop = { 
 
 Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
 Menu.combo:MenuElement({ id = "useQ", name = "Use Q (hook)", value = true })
-Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 100, min = 0, max = 250, step = 10 })
+Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 80, min = 0, max = 250, step = 10 })
 Menu.combo:MenuElement({ id = "useE", name = "Use E (flay)", value = true })
 Menu.combo:MenuElement({
     id = "eDir",
@@ -135,10 +135,10 @@ Menu.combo:MenuElement({ id = "rCount", name = "R if enemies inside >=", value =
 
 Menu:MenuElement({ type = MENU, id = "flashQ", name = "Flash Q" })
 Menu.flashQ:MenuElement({ id = "key", name = "Hold key", key = string.byte("T") })
-Menu.flashQ:MenuElement({ id = "order", name = "Order", value = 1, drop = { "Q then Flash", "Flash then Q" } })
+Menu.flashQ:MenuElement({ id = "order", name = "Order", value = 2, drop = { "Q then Flash", "Flash then Q" } })
 Menu.flashQ:MenuElement({ id = "hit", name = "Min hit chance", value = 2, drop = { "Normal", "High", "Immobile" } })
 Menu.flashQ:MenuElement({ id = "onlyOut", name = "Only out of normal Q range", value = true })
-Menu.flashQ:MenuElement({ id = "margin", name = "Range safety margin", value = 40, min = 0, max = 150, step = 10 })
+Menu.flashQ:MenuElement({ id = "margin", name = "Range safety margin", value = 80, min = 0, max = 150, step = 10 })
 Menu.flashQ:MenuElement({ id = "ring", name = "Draw flash Q range", value = true })
 
 Menu:MenuElement({ type = MENU, id = "leap", name = "Q2 Leap" })
