@@ -208,6 +208,18 @@ local function Facing(src, dst, angle)
     return AngleGap(d, { x = p.x - sp.x, z = (p.z or p.y) - (sp.z or sp.y) }) < (angle or 90)
 end
 
+local function Whole(v)
+    if type(v) ~= "number" or v ~= v or v < -32000 or v > 32000 then return nil end
+    return floor(v)
+end
+
+local function Warp(x, y)
+    local wx, wy = Whole(x), Whole(y)
+    if wx == nil or wy == nil then return false end
+    Control.SetCursorPos(wx, wy)
+    return true
+end
+
 local function Trim(t, keep, high)
     for i = high, keep + 1, -1 do
         t[i] = nil
@@ -2036,6 +2048,7 @@ local function ScreenOf(a)
         return p
     end
     if a.z ~= nil then
+        if Whole(a.x) == nil or Whole(a.z) == nil then return nil end
         return Vector(a.x, a.y or 0, a.z):To2D()
     end
     if a.x ~= nil then
@@ -2082,17 +2095,27 @@ function Input:Send(keys, at)
     if not screen then return false end
     if screen.onScreen == false then return false end
 
-    local cur = CursorPos()
-    self.savedX, self.savedY = cur.x, cur.y
+    local tx, ty = Whole(screen.x), Whole(screen.y)
+    if tx == nil or ty == nil then return false end
 
-    Control.SetCursorPos(screen.x, screen.y)
+    local cur = CursorPos()
+    local bx, by = Whole(cur and cur.x), Whole(cur and cur.y)
+    if bx == nil or by == nil then return false end
+    self.savedX, self.savedY = bx, by
+
+    Control.SetCursorPos(tx, ty)
 
     local isClick = keys == MOUSEEVENTF_RIGHTDOWN
     if not isClick then
         local now = CursorPos()
-        local dx, dy = now.x - screen.x, now.y - screen.y
+        local nx, ny = Whole(now and now.x), Whole(now and now.y)
+        if nx == nil or ny == nil then
+            Warp(bx, by)
+            return false
+        end
+        local dx, dy = nx - tx, ny - ty
         if dx * dx + dy * dy > 25 then
-            Control.SetCursorPos(self.savedX, self.savedY)
+            Warp(bx, by)
             return false
         end
     end
@@ -2125,9 +2148,10 @@ function Input:OnTick()
     if self.step == 0 then return end
     self.wait = self.wait - 1
     if self.wait > 0 then return end
-    Control.SetCursorPos(self.savedX, self.savedY)
+    local x, y = self.savedX, self.savedY
     self.step = 0
     self.forceTcoUp = false
+    Warp(x, y)
 end
 
 local Mover = {
