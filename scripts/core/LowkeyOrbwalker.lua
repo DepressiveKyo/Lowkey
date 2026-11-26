@@ -757,7 +757,12 @@ function World:Refresh()
     local lane, jungle, allyMin = self.lane, self.jungle, self.allyMin
     local handleN = 0
     local handleKeys, handleMap = self.handleKeys, self.handleMap
-    for k in pairs(handleMap) do handleMap[k] = nil end
+    local wantHandles = ModeState[MODE_HARASS] or ModeState[MODE_LANECLEAR]
+        or ModeState[MODE_JUNGLECLEAR] or ModeState[MODE_LASTHIT]
+    if wantHandles or self.handlesBuilt then
+        for k in pairs(handleMap) do handleMap[k] = nil end
+    end
+    self.handlesBuilt = wantHandles
 
     local byDistance = UseDistance
     local mc = MinionCount()
@@ -776,10 +781,12 @@ function World:Refresh()
                 end
                 if near and u.visible and u.isTargetable and not u.dead and not u.isImmortal then
                     local team = u.team
-                    handleN = handleN + 1
-                    local h = u.handle
-                    handleKeys[handleN] = h
-                    handleMap[h] = u
+                    if wantHandles then
+                        handleN = handleN + 1
+                        local h = u.handle
+                        handleKeys[handleN] = h
+                        handleMap[h] = u
+                    end
                     if team == ENEMY_TEAM then
                         laneN = laneN + 1
                         lane[laneN] = u
@@ -829,9 +836,11 @@ function World:Refresh()
                 turretN = turretN + 1
                 turret[turretN] = u
                 local h = u.handle
-                handleN = handleN + 1
-                handleKeys[handleN] = h
-                handleMap[h] = u
+                if wantHandles then
+                    handleN = handleN + 1
+                    handleKeys[handleN] = h
+                    handleMap[h] = u
+                end
                 if u.isEnemy then
                     structN = structN + 1
                     struct[structN] = u
@@ -2642,8 +2651,8 @@ Callback.Add("Tick", function()
     Net:Refresh()
     local prof = ProfOn()
     local t = prof and CLOCK()
-    World:Refresh()
     Walker:GetModes()
+    World:Refresh()
     Timing:Observe()
     local resetHook = Hooks.AttackReset
     if resetHook and resetHook() then
