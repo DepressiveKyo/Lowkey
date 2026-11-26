@@ -336,7 +336,7 @@ local CLOCK = os and os.clock
 local PROF_WINDOW = 256
 local PROF_KEYS = { "world", "select", "farm", "champT", "input", "walk", "ownD", "champD" }
 local PROF_N = 8
-local Prof = { frames = 0, text = "profile warming up" }
+local Prof = { frames = 0, text = "profile warming up", sweptSum = 0, sweptN = 0 }
 for i = 1, PROF_N do Prof[PROF_KEYS[i]] = 0 end
 
 local function ProfOn()
@@ -347,10 +347,16 @@ local function ProfAdd(key, started)
     Prof[key] = Prof[key] + (CLOCK() - started)
 end
 
+local function ProfSwept(n)
+    Prof.sweptSum = Prof.sweptSum + n
+    Prof.sweptN = Prof.sweptN + 1
+end
+
 local function ProfRoll(counts)
     Prof.frames = Prof.frames + 1
     if Prof.frames < PROF_WINDOW then return end
     local total = 0
+    local worldMs = 0
     local parts = Prof.parts
     if not parts then
         parts = {}
@@ -359,11 +365,17 @@ local function ProfRoll(counts)
     for i = 1, PROF_N do
         local key = PROF_KEYS[i]
         local ms = Prof[key] * 1000 / Prof.frames
+        if i == 1 then worldMs = ms end
         total = total + ms
         parts[i] = format("%s %.2f", key, ms)
         Prof[key] = 0
     end
     Prof.text = format("frame %.2fms | %s", total, concat(parts, "  "))
+    local swept = (Prof.sweptN > 0 and Prof.sweptSum / Prof.sweptN) or 0
+    if swept >= 1 then
+        Prof.text = Prof.text .. format("  | %.0f swept, %.2fus each", swept, worldMs * 1000 / swept)
+    end
+    Prof.sweptSum, Prof.sweptN = 0, 0
     Prof.frames = 0
     local lk = _G.Lowkey
     if lk and lk.Log then
@@ -650,6 +662,7 @@ local World = {
     highHero = 0, highEnemy = 0, highAlly = 0, highLane = 0,
     highJungle = 0, highAllyMin = 0, highWard = 0, highTurret = 0, highStruct = 0,
     buildings = {}, buildingN = 0, buildingDone = false,
+    sweptMin = 0, sweptTur = 0, sweptWard = 0, sweptHero = 0,
 }
 
 function World:HeroArgs(u)
@@ -725,6 +738,7 @@ function World:Refresh()
     local hero, enemy, ally = self.hero, self.enemy, self.ally
 
     local hc = HeroCount()
+    self.sweptHero = (type(hc) == "number" and hc) or 0
     if hc and hc > 0 and hc < 64 then
         for i = 1, hc do
             local u = HeroAt(i)
@@ -766,6 +780,7 @@ function World:Refresh()
 
     local byDistance = UseDistance
     local mc = MinionCount()
+    self.sweptMin = (type(mc) == "number" and mc) or 0
     if mc and mc > 0 and mc < 1000 then
         for i = 1, mc do
             local u = MinionAt(i)
@@ -809,8 +824,10 @@ function World:Refresh()
 
     local wardN = 0
     local ward = self.ward
+    self.sweptWard = 0
     if Menu.farm.wards:Value() then
         local wc = WardCount()
+        self.sweptWard = (type(wc) == "number" and wc) or 0
         if wc and wc > 0 and wc < 500 then
             for i = 1, wc do
                 local u = WardAt(i)
@@ -829,6 +846,7 @@ function World:Refresh()
     local turret, struct = self.turret, self.struct
     self.allyTurret, self.allyTurretHandle = nil, nil
     local tc = TurretCount()
+    self.sweptTur = (type(tc) == "number" and tc) or 0
     if tc and tc > 0 and tc < 200 then
         for i = 1, tc do
             local u = TurretAt(i)
@@ -2675,7 +2693,10 @@ Callback.Add("Tick", function()
     for i = 1, #ticks do
         ticks[i]()
     end
-    if prof then ProfAdd("champT", t) end
+    if prof then
+        ProfAdd("champT", t)
+        ProfSwept(World.sweptMin + World.sweptTur + World.sweptWard + World.sweptHero)
+    end
 end)
 
 Callback.Add("Draw", function()
@@ -2704,8 +2725,9 @@ Callback.Add("Draw", function()
     end
     if prof then
         ProfAdd("champD", t)
-        ProfRoll(format("enemies %d lane %d jungle %d farm %d",
-            World.enemyN or 0, World.laneN or 0, World.jungleN or 0, Farm.minionN or 0))
+        ProfRoll(format("enemies %d lane %d jungle %d farm %d | min %d tur %d ward %d hero %d",
+            World.enemyN or 0, World.laneN or 0, World.jungleN or 0, Farm.minionN or 0,
+            World.sweptMin or 0, World.sweptTur or 0, World.sweptWard or 0, World.sweptHero or 0))
     end
 end)
 
