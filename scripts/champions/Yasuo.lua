@@ -50,6 +50,8 @@ local E_BASE = { 60, 70, 80, 90, 100 }
 local E_AD, E_AP = 0.20, 0.60
 
 local W_RANGE = 400
+local W_CAST = 0.25
+local MISSILE_PAD = 70
 
 local R_RANGE, R_RANGE2 = 1400, 1400 * 1400
 local R_BASE = { 200, 350, 500 }
@@ -111,6 +113,10 @@ local EHn = 0
 local EList, EListN = {}, 0
 local HeroSeen = -1
 
+local EnemyHandles = {}
+local HandleTick = -1
+local WallX, WallZ, WallTick = 0, 0, -1
+
 local TurX, TurZ = {}, {}
 local TurN = 0
 local TurTick = -1
@@ -141,7 +147,10 @@ Menu.dash:MenuElement({ id = "crowd", name = "Skip if enemies at landing >=", va
 
 Menu:MenuElement({ type = MENU, id = "wall", name = "W Wind Wall" })
 Menu.wall:MenuElement({ id = "key", name = "Cast toward cursor", key = string.byte("G") })
-Menu.wall:MenuElement({ id = "auto", name = "Block missiles aimed at me", value = false })
+Menu.wall:MenuElement({ id = "auto", name = "Block incoming skillshots", value = true })
+Menu.wall:MenuElement({ id = "attacks", name = "Also block basic attacks", value = false })
+Menu.wall:MenuElement({ id = "window", name = "React when impact within", value = 0.5, min = 0.2, max = 1.2, step = 0.05 })
+Menu.wall:MenuElement({ id = "pad", name = "Extra hit radius", value = 30, min = 0, max = 150, step = 10 })
 
 Menu:MenuElement({ type = MENU, id = "ult", name = "R Last Breath" })
 Menu.ult:MenuElement({ id = "use", name = "Use R on knocked up", value = true })
@@ -165,6 +174,7 @@ Menu.draw:MenuElement({ id = "qRange", name = "Q range", value = true })
 Menu.draw:MenuElement({ id = "eRange", name = "E range", value = true })
 Menu.draw:MenuElement({ id = "rRange", name = "R range", value = false })
 Menu.draw:MenuElement({ id = "marks", name = "Mark dashable enemies", value = true })
+Menu.draw:MenuElement({ id = "wall", name = "Mark the missile W would block", value = true })
 
 local function PhysMul(armor, pen)
     local v = armor or 0
@@ -548,6 +558,33 @@ local function CastR()
     return false
 end
 
+local function EnemyHandleSet()
+    if HandleTick == TICK then return EnemyHandles end
+    HandleTick = TICK
+    for k in pairs(EnemyHandles) do EnemyHandles[k] = nil end
+    for i = 1, EListN do
+        local u = EList[i]
+        local h = u and u.handle
+        if h then EnemyHandles[h] = true end
+    end
+    return EnemyHandles
+end
+
+local function WillHitMe(mx, mz, ex, ez, radius)
+    local dx, dz = ex - mx, ez - mz
+    local px, pz = S.x - mx, S.z - mz
+    local len2 = dx * dx + dz * dz
+    if len2 < 1 then
+        return px * px + pz * pz <= radius * radius
+    end
+    local t = (px * dx + pz * dz) / len2
+    if t < 0 then return false end
+    if t > 1 then t = 1 end
+    local cx = mx + dx * t - S.x
+    local cz = mz + dz * t - S.z
+    return cx * cx + cz * cz <= radius * radius
+end
+
 local function CastWAt(x, z)
     if not S.wR or S.casting or SentTick[SW] == TICK then return false end
     local dx, dz = x - S.x, z - S.z
@@ -558,6 +595,55 @@ local function CastWAt(x, z)
     return Send(HK_W, SW, S.x + dx * k, S.z + dz * k)
 end
 
+local function FindThreat()
+    if EListN == 0 then return nil end
+    local total = GameMissileCount()
+    if not total or total <= 0 or total > 20000 then return nil end
+
+    local mine = myHero.handle
+    local owners = EnemyHandleSet()
+    local blockAttacks = Menu.wall.attacks:Value()
+    local radius = MISSILE_PAD + (myHero.boundingRadius or 65) + Menu.wall.pad:Value()
+    local window = Menu.wall.window:Value()
+
+    local lat = 0.05
+    local sdk = _G.SDK
+    local dat = sdk and sdk.Data
+    if dat and dat.GetLatency then
+        local ok, v = pcall(dat.GetLatency, dat)
+        if ok and type(v) == "number" and v > 0 then lat = v end
+    end
+    local floorLead = W_CAST + lat
+
+    local bestX, bestZ, bestLead = nil, nil, math_huge
+    for i = total, 1, -1 do
+        local ms = GameMissile(i)
+        local d = ms and ms.missileData
+        if d and d.owner ~= mine and owners[d.owner] then
+            local targeted = d.target ~= nil and d.target ~= 0
+            if blockAttacks or not targeted then
+                local sp = ms.pos
+                local ep = d.endPos
+                if sp and ep then
+                    local mx, mz = sp.x, sp.z or sp.y
+                    local dx, dz = S.x - mx, S.z - mz
+                    local gap = math_sqrt(dx * dx + dz * dz)
+                    local speed = d.speed
+                    if not speed or speed <= 0 then speed = 1500 end
+                    local lead = gap / speed
+                    if lead >= floorLead and lead <= window and lead < bestLead then
+                        local ex, ez = ep.x, ep.z or ep.y
+                        if targeted or WillHitMe(mx, mz, ex, ez, radius) then
+                            bestX, bestZ, bestLead = mx, mz, lead
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestX, bestZ
+end
+
 local function RunWall()
     if Menu.wall.key:Value() then
         local m = Game.mousePos()
@@ -565,20 +651,20 @@ local function RunWall()
     end
     if not Menu.wall.auto:Value() then return false end
     if not S.wR or S.casting or SentTick[SW] == TICK then return false end
-    local mine = myHero.handle
-    local total = GameMissileCount()
-    if not total or total <= 0 or total > 20000 then return false end
-    for i = total, 1, -1 do
-        local ms = GameMissile(i)
-        local d = ms and ms.missileData
-        if d and d.target == mine and d.owner ~= mine then
-            local sp = ms.pos
-            if sp then
-                return CastWAt(sp.x, sp.z or sp.y)
-            end
-        end
-    end
-    return false
+
+    local mx, mz = FindThreat()
+    if not mx then return false end
+
+    WallX, WallZ, WallTick = mx, mz, TICK
+
+    local dx, dz = mx - S.x, mz - S.z
+    local gap = math_sqrt(dx * dx + dz * dz)
+    if gap < 1 then return false end
+    local reach = gap * 0.6
+    if reach < 100 then reach = 100 end
+    if reach > W_RANGE then reach = W_RANGE end
+    local k = reach / gap
+    return Send(HK_W, SW, S.x + dx * k, S.z + dz * k)
 end
 
 local function KillSteal()
@@ -716,6 +802,11 @@ local function OnDraw()
     end
     if draw.eRange:Value() then DrawCircle(pos, E_RANGE, 1, COL_E) end
     if draw.rRange:Value() then DrawCircle(pos, R_RANGE, 1, COL_R) end
+
+    if draw.wall:Value() and WallTick >= 0 and TICK - WallTick < 60 then
+        Pos.x, Pos.y, Pos.z = WallX, S.y, WallZ
+        DrawCircle(Pos, 90, 2, COL_MARK)
+    end
 
     if draw.marks:Value() then
         for i = 1, EHn do
