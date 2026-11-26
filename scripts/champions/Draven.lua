@@ -2,7 +2,7 @@ if _G.__LOWKEY_DRAVEN_LOADED then return end
 _G.__LOWKEY_DRAVEN_LOADED = true
 if myHero.charName ~= "Draven" then return end
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local SCRIPT_NAME = "Lowkey Draven"
 
 local PredTries = 0
@@ -62,7 +62,6 @@ local COL_BORD = DrawColor(255, 200, 50, 50)
 local COL_RDY = DrawColor(255, 120, 255, 120)
 local COL_CD = DrawColor(255, 200, 200, 200)
 local COL_OFF = DrawColor(255, 130, 130, 130)
-local COL_FURY = DrawColor(255, 255, 140, 60)
 
 local PANEL_NAMES = { "Q", "W", "E", "R" }
 
@@ -688,7 +687,6 @@ local PC = {
     cdText = { "Q", "W", "E", "R" },
     cdReady = { false, false, false, false },
     lastCd = {}, lastLv = {},
-    axes = -1, axeText = "AXES 0",
 }
 
 local function PanelCell(i, cd, ready, lv)
@@ -727,11 +725,6 @@ local function DrawPanel()
             PC.y = res.y - 210
         end
     end
-    if PC.axes ~= S.spinning then
-        PC.axes = S.spinning
-        PC.axeText = string_format("AXES %d", S.spinning)
-    end
-
     PanelCell(1, S.qCd, S.qR, S.qLv)
     PanelCell(2, S.wCd, S.wR, S.wLv)
     PanelCell(3, S.eCd, S.eR, S.eLv)
@@ -742,11 +735,9 @@ local function DrawPanel()
         Draw.Rect(x, y, 300, 56, COL_BG)
         Draw.Rect(x, y, 300, 2, COL_BORD)
     end
-    DrawText(PC.axeText, 12, x + 10, y + 8, (S.spinning > 0 and COL_AXE) or COL_OFF)
-    DrawText((S.fury and "FURY") or "fury", 12, x + 90, y + 8, (S.fury and COL_FURY) or COL_OFF)
     local tag = (S.catching and "CATCH") or "catch"
     if S.why ~= "" then tag = tag .. " " .. S.why end
-    DrawText(tag, 12, x + 160, y + 8, (S.catching and COL_AXE) or COL_OFF)
+    DrawText(tag, 12, x + 10, y + 8, (S.catching and COL_AXE) or COL_OFF)
     if S.rDouble then
         DrawText("Rx2", 12, x + 268, y + 8, COL_RDY)
     end
