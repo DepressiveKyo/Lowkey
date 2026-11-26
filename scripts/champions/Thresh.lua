@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.4"
+local VERSION = "1.5"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -39,6 +39,7 @@ local Q_DELAY, Q_SPEED, Q_RADIUS = 0.5, 1900, 70
 local W_RANGE, W_RANGE2 = 950, 950 * 950
 local E_RANGE, E_RANGE2 = 450, 450 * 450
 local E_DELAY, E_RADIUS = 0.389, 110
+local E_BACK = 200
 local R_RADIUS, R_RADIUS2 = 400, 400 * 400
 local R_DELAY = 0.45
 local LEAP_HOLD = 0.4
@@ -123,7 +124,12 @@ Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
 Menu.combo:MenuElement({ id = "useQ", name = "Use Q (hook)", value = true })
 Menu.combo:MenuElement({ id = "qSafety", name = "Q range safety margin", value = 100, min = 0, max = 250, step = 10 })
 Menu.combo:MenuElement({ id = "useE", name = "Use E (flay)", value = true })
-Menu.combo:MenuElement({ id = "ePull", name = "E pulls toward me", value = true })
+Menu.combo:MenuElement({
+    id = "eDir",
+    name = "E direction",
+    value = 1,
+    drop = { "Pull toward me", "Push away (gapcloser)" },
+})
 Menu.combo:MenuElement({ id = "useR", name = "Use R (box)", value = true })
 Menu.combo:MenuElement({ id = "rCount", name = "R if enemies inside >=", value = 2, min = 1, max = 5 })
 
@@ -571,20 +577,21 @@ local function FlashQ()
     return true
 end
 
-local function CastE(i, pull)
+local function EAim(x, z)
+    if Menu.combo.eDir:Value() ~= 1 then return x, z end
+    local dx, dz = x - S.x, z - S.z
+    local len = math_sqrt(dx * dx + dz * dz)
+    if len < 1 then return x, z end
+    return S.x - dx / len * E_BACK, S.z - dz / len * E_BACK
+end
+
+local function CastE(i)
     if i == 0 or not S.eR or SentTick[SE] == TICK then return false end
     if EHd2[i] > E_RANGE2 then return false end
     local lim = E_RANGE + 20
     local x, z = PredictAt(PredE, i, HitOf(Menu.pred.eHit:Value()), lim * lim)
     if not x then return false end
-    if pull then
-        local dx, dz = x - S.x, z - S.z
-        local len = math_sqrt(dx * dx + dz * dz)
-        if len > 1 then
-            x = S.x - dx / len * 200
-            z = S.z - dz / len * 200
-        end
-    end
+    x, z = EAim(x, z)
     return Send(HK_E, SE, x, z)
 end
 
@@ -592,6 +599,7 @@ local function CastEAt(x, z)
     if not S.eR or SentTick[SE] == TICK then return false end
     local dx, dz = x - S.x, z - S.z
     if dx * dx + dz * dz > E_RANGE2 then return false end
+    x, z = EAim(x, z)
     return Send(HK_E, SE, x, z)
 end
 
@@ -620,7 +628,7 @@ local function KillSteal()
     if ks.useE:Value() and S.eR and SentTick[SE] ~= TICK then
         for i = 1, EHn do
             if EHd2[i] <= E_RANGE2 and EHhp[i] < EDamage(i) then
-                if CastE(i, false) then return true end
+                if CastE(i) then return true end
             end
         end
     end
@@ -645,7 +653,7 @@ local function AutoE()
             if EHdash[i] then
                 local dx, dz = EHdx[i] - S.x, EHdz[i] - S.z
                 if dx * dx + dz * dz < 160000 and EHd2[i] <= E_RANGE2 then
-                    if CastE(i, false) then return true end
+                    if CastE(i) then return true end
                 end
             end
         end
@@ -656,7 +664,7 @@ local function AutoE()
             if EHd2[i] <= E_RANGE2 then
                 local act = EHo[i].activeSpell
                 if act and act.valid and not act.isStopped and act.isChanneling then
-                    if CastE(i, false) then return true end
+                    if CastE(i) then return true end
                 end
             end
         end
@@ -687,7 +695,7 @@ local function RunCombo()
 
     if combo.useQ:Value() and CastQ(ti) then return end
 
-    if combo.useE:Value() and ti ~= 0 and CastE(ti, combo.ePull:Value()) then return end
+    if combo.useE:Value() and ti ~= 0 and CastE(ti) then return end
 
     if combo.useR:Value() and S.rR and SentTick[SR] ~= TICK and BoxWorth() then
         CastSpell(HK_R)
