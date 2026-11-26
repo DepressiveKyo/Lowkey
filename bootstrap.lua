@@ -324,7 +324,37 @@ local function AfterManifest()
     FetchUpdates()
 end
 
+local function EnsureGGUpdate()
+    if _G.GGUpdate then return end
+    local idle = {
+        Step = 0,
+        CanUpdate = function() return false end,
+        OnTick = function() end,
+    }
+    _G.GGUpdate = {
+        Callbacks = {},
+        DownloadFile = function(_, url, path, cb) Download(url, path, cb) end,
+        New = function(_, cfg)
+            if type(cfg) ~= "table" or not cfg.versionUrl or not cfg.versionPath then
+                return idle
+            end
+            Download(cfg.versionUrl, cfg.versionPath, function()
+                local remote = tonumber(ReadFile(cfg.versionPath, 32))
+                local running = tonumber(cfg.version) or 0
+                if not remote or remote <= running then return end
+                if not cfg.scriptUrl or not cfg.scriptPath then return end
+                Download(cfg.scriptUrl, cfg.scriptPath, function()
+                    print(format("[Lowkey] %s updated to %s, restart GoS to load it",
+                        tostring(cfg.scriptName or "shared"), tostring(remote)))
+                end)
+            end)
+            return idle
+        end,
+    }
+end
+
 function PreloadShared()
+    EnsureGGUpdate()
     if _G.GGPrediction then
         SharedState = "already loaded"
         return
