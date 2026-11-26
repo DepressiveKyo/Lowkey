@@ -2,7 +2,7 @@ if _G.__LOWKEY_LILLIA_LOADED then return end
 _G.__LOWKEY_LILLIA_LOADED = true
 if myHero.charName ~= "Lillia" then return end
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local SCRIPT_NAME = "Lowkey Lillia"
 
 local PredTries = 0
@@ -54,9 +54,6 @@ local E_REACH = 1400
 local E_BASE = { 60, 85, 110, 135, 160 }
 local E_AP = 0.5
 
-local R_BASE = { 100, 150, 200 }
-local R_AP = 0.4
-
 local NAME_Q = "LilliaQ"
 local NAME_W = "LilliaW"
 local NAME_E = "LilliaE"
@@ -88,7 +85,7 @@ local S = {
     qLv = 0, wLv = 0, eLv = 0, rLv = 0,
     qCd = 0, wCd = 0, eCd = 0, rCd = 0,
     qR = false, wR = false, eR = false, rR = false,
-    qRaw = 0, wRaw = 0, wcRaw = 0, eRaw = 0, rRaw = 0,
+    qRaw = 0, wRaw = 0, wcRaw = 0, eRaw = 0,
     prance = 0,
     casting = false,
     mode = 0,
@@ -132,11 +129,6 @@ Menu.combo:MenuElement({ id = "useW", name = "Use W", value = true })
 Menu.combo:MenuElement({ id = "wCenter", name = "Only W on the epicenter", value = true })
 Menu.combo:MenuElement({ id = "useE", name = "Use E", value = true })
 Menu.combo:MenuElement({ id = "eMin", name = "E only beyond", value = 450, min = 0, max = 700, step = 50 })
-
-Menu:MenuElement({ type = MENU, id = "ult", name = "Ultimate" })
-Menu.ult:MenuElement({ id = "use", name = "Use R", value = true })
-Menu.ult:MenuElement({ id = "count", name = "R if dusted enemies >=", value = 2, min = 1, max = 5, step = 1 })
-Menu.ult:MenuElement({ id = "kill", name = "R one target if it kills", value = true })
 
 Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
 Menu.harass:MenuElement({ id = "useQ", name = "Use Q", value = true })
@@ -325,7 +317,6 @@ local function SyncSelf()
     S.wRaw = (S.wLv > 0 and W_BASE[S.wLv] + W_AP * S.ap) or 0
     S.wcRaw = (S.wLv > 0 and W_CBASE[S.wLv] + W_CAP * S.ap) or 0
     S.eRaw = (S.eLv > 0 and E_BASE[S.eLv] + E_AP * S.ap) or 0
-    S.rRaw = (S.rLv > 0 and R_BASE[S.rLv] + R_AP * S.ap) or 0
 
     S.mode = OrbMode()
 end
@@ -412,7 +403,6 @@ local function WDamage(i, center)
 end
 
 local function EDamage(i) return S.eRaw * MagicMul(EHmr[i]) end
-local function RDamage(i) return S.rRaw * MagicMul(EHmr[i]) end
 
 local function Send(hk, slot, x, z)
     Pos.x, Pos.y, Pos.z = x, S.y, z
@@ -484,18 +474,6 @@ local function CastE(i)
     return Send(HK_E, SE, x, z)
 end
 
-local function CastR()
-    if not S.rR or S.casting or SentTick[SR] == TICK then return false end
-    local node = Menu.ult
-    if not node.use:Value() then return false end
-    if S.dusted >= node.count:Value() then return SendSelf(HK_R, SR) end
-    if not node.kill:Value() then return false end
-    for i = 1, EHn do
-        if EHdust[i] and RDamage(i) >= EHhp[i] then return SendSelf(HK_R, SR) end
-    end
-    return false
-end
-
 local function KillSteal()
     local node = Menu.ks
     for i = 1, EHn do
@@ -517,7 +495,6 @@ end
 local function RunCombo()
     local node = Menu.combo
     local i = S.ti
-    if CastR() then return end
     if node.useQ:Value() and EdgeQ(i) then return end
     if i == 0 then return end
     if node.useW:Value() and CastW(i) then return end
