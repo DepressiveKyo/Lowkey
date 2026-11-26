@@ -1,6 +1,6 @@
 return {
     api = 1,
-    version = "2026.11.26.1900",
+    version = "2026.11.26.1907",
     scripts = {
         ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 27987, sha256 = "e888cd1f3a6372b9caea24c8ef9381086b8f88e42bdca0529bf0e038dc0b7d18", champion = "Draven" },
         ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24219, sha256 = "e91b101841a92720940dbfd41286358346250da57e45b5d98284b2bc5e497871", champion = "Lillia" },
@@ -8,6 +8,6 @@ return {
         ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 86161, sha256 = "c9a5b0beb7aea2529ce7dffc03632f4fd4c6f57b54ba2b78a7d862e320d0cab9", order = 10 },
         ["LowkeySmite"] = { file = "scripts/core/LowkeySmite.lua", bytes = 16174, sha256 = "3b99c92a7900316124b17465b63b195ada0acf02ddbd54af1f70f61f811b97e0", order = 10 },
         ["Thresh"] = { file = "scripts/champions/Thresh.lua", bytes = 26839, sha256 = "956e2f733050cc710aa82ad08d06b1fe1bf49a94d582bc63d3192341ba520a48", champion = "Thresh" },
-        ["Yasuo"] = { file = "scripts/champions/Yasuo.lua", bytes = 42299, sha256 = "9c6e03e3141830cfc89db5c40529eeb24088d6242ec34c883422ebaa255d07a7", champion = "Yasuo" },
+        ["Yasuo"] = { file = "scripts/champions/Yasuo.lua", bytes = 44044, sha256 = "3f66f547f9e77c3a928f55ed9beb8ab58a4ddb232d26f01427ffd6869d1e7d24", champion = "Yasuo" },
     },
 }

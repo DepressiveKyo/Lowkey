@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.6"
+local VERSION = "1.7"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -61,6 +61,7 @@ local W_CAST = 0.25
 local MISSILE_PAD = 70
 
 local R_RANGE, R_RANGE2 = 1400, 1400 * 1400
+local R_CLUSTER2 = 400 * 400
 local R_BASE = { 200, 350, 500 }
 local R_AD = 1.50
 local R_ARMOR_PEN = 0.50
@@ -171,6 +172,11 @@ Menu.wall:MenuElement({ id = "pad", name = "Extra hit radius", value = 30, min =
 Menu:MenuElement({ type = MENU, id = "ult", name = "R Last Breath" })
 Menu.ult:MenuElement({ id = "use", name = "Use R on knocked up", value = true })
 Menu.ult:MenuElement({ id = "count", name = "Only if knocked up >=", value = 1, min = 1, max = 5, step = 1 })
+
+Menu:MenuElement({ type = MENU, id = "flee", name = "Flee" })
+Menu.flee:MenuElement({ id = "useE", name = "E toward the cursor", value = true })
+Menu.flee:MenuElement({ id = "heroes", name = "Also dash through enemies", value = false })
+Menu.flee:MenuElement({ id = "noTurret", name = "Never land under a turret", value = true })
 
 Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
 Menu.harass:MenuElement({ id = "useQ", name = "Use Q", value = true })
@@ -530,7 +536,7 @@ end
 
 local function SyncMinions()
     local mode = S.mode
-    local want = mode == 2 or mode == 3 or mode == 4
+    local want = mode == 2 or mode == 3 or mode == 4 or mode == 5
         or (mode == 1 and Menu.combo.gap:Value() == true)
     if not want then
         for i = 1, CMn do CMo[i] = nil end
@@ -819,12 +825,24 @@ local function CastR()
     if not Menu.ult.use:Value() or not S.rR or S.casting or SentTick[SR] == TICK then return false end
     if S.mode ~= 1 then return false end
     if S.knocked < Menu.ult.count:Value() then return false end
+    local pick, bestScore = 0, -1
     for i = 1, EHn do
         if EHknock[i] and EHd2[i] <= R_RANGE2 then
-            return SendUnit(HK_R, SR, EHo[i])
+            local ix, iz = EHx[i], EHz[i]
+            local near = 1
+            for j = 1, EHn do
+                if j ~= i and EHknock[j] then
+                    local dx, dz = EHx[j] - ix, EHz[j] - iz
+                    if dx * dx + dz * dz <= R_CLUSTER2 then near = near + 1 end
+                end
+            end
+            local score = near * 10
+            if RDamage(i) >= EHhp[i] then score = score + 5 end
+            if score > bestScore then pick, bestScore = i, score end
         end
     end
-    return false
+    if pick == 0 then return false end
+    return SendUnit(HK_R, SR, EHo[pick])
 end
 
 local function EnemyHandleSet()
@@ -1151,6 +1169,25 @@ local function RunLastHit()
     end
 end
 
+local function RunFlee()
+    local node = Menu.flee
+    if not node.useE:Value() then return end
+    if not S.eR or S.casting or SentTick[SE] == TICK then return end
+    local m = Game.mousePos()
+    if not m then return end
+    local mx, mz = m.x, m.z or m.y
+    local dx, dz = mx - S.x, mz - S.z
+    local best2, bu, bx, bz = dx * dx + dz * dz, nil, nil, nil
+    best2, bu, bx, bz = BestLanding(CMn, CMo, CMx, CMz, mx, mz, best2, bu, bx, bz)
+    best2, bu, bx, bz = BestLanding(JMn, JMo, JMx, JMz, mx, mz, best2, bu, bx, bz)
+    if node.heroes:Value() then
+        best2, bu, bx, bz = BestLanding(EHn, EHo, EHx, EHz, mx, mz, best2, bu, bx, bz)
+    end
+    if not bu then return end
+    if node.noTurret:Value() and UnderTurret(bx, bz) then return end
+    SendUnit(HK_E, SE, bu)
+end
+
 local function RunHarass()
     local node = Menu.harass
     if node.useQ:Value() and (S.hasQ3 or not node.q3Only:Value()) then
@@ -1292,6 +1329,8 @@ local function OnTick()
         RunClear()
     elseif S.mode == 4 then
         RunLastHit()
+    elseif S.mode == 5 then
+        RunFlee()
     end
 end
 
