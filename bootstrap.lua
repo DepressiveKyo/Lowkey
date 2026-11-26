@@ -138,11 +138,12 @@ local function FileSize(path)
     return size
 end
 
-local function Discard(path)
+local function Discard(path, unsafe)
     if os and os.remove then
         local ok, done = pcall(os.remove, path)
         if ok and done then return end
     end
+    if not unsafe then return end
     local f = io.open(path, "wb")
     if f then f:close() end
 end
@@ -298,7 +299,7 @@ local function VerifyStaged(name, entry)
         return
     end
     print("[Lowkey] discarded bad download for " .. name .. ": " .. reason)
-    Discard(LocalPathOf(entry))
+    Discard(LocalPathOf(entry), reason == "hash mismatch")
 end
 
 local function FetchUpdates()
