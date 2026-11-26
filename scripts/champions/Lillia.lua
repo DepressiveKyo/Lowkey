@@ -2,7 +2,7 @@ if _G.__LOWKEY_LILLIA_LOADED then return end
 _G.__LOWKEY_LILLIA_LOADED = true
 if myHero.charName ~= "Lillia" then return end
 
-local VERSION = "1.3"
+local VERSION = "1.4"
 local SCRIPT_NAME = "Lowkey Lillia"
 
 local PredTries = 0
@@ -163,6 +163,18 @@ local function MagicMul(mr)
     if flat and flat > 0 then v = v - flat end
     if v >= 0 then return 100 / (100 + v) end
     return 2 - 100 / (100 - v)
+end
+
+local BuffSrc = nil
+
+local function BuffMapOf(unit)
+    if BuffSrc == nil then
+        local sdk = _G.SDK
+        local c = sdk and sdk.Cached
+        BuffSrc = (c and c.GetBuffMap and c) or false
+    end
+    if not BuffSrc then return nil end
+    return BuffSrc:GetBuffMap(unit)
 end
 
 local function IsValidUnit(obj)
@@ -367,21 +379,27 @@ local function SyncEnemies()
 
             local dust, sleep = false, false
             if EHd2[n] <= SCAN_REACH2 then
-                local bc = h.buffCount
-                if bc then
-                    for b = 0, bc - 1 do
-                        local buff = h:GetBuff(b)
-                        if buff and buff.count and buff.count > 0 then
-                            local nm = buff.name
-                            local ln = nm and #nm
-                            if ln == DUST_LEN or ln == SLEEP_LEN then
-                                local bn = string_lower(nm)
-                                if bn == BUFF_DUST then
-                                    dust = true
-                                    if sleep then break end
-                                elseif bn == BUFF_SLEEP then
-                                    sleep = true
-                                    if dust then break end
+                local map = BuffMapOf(h)
+                if map then
+                    dust = map[BUFF_DUST] ~= nil
+                    sleep = map[BUFF_SLEEP] ~= nil
+                else
+                    local bc = h.buffCount
+                    if bc then
+                        for b = 0, bc - 1 do
+                            local buff = h:GetBuff(b)
+                            if buff and buff.count and buff.count > 0 then
+                                local nm = buff.name
+                                local ln = nm and #nm
+                                if ln == DUST_LEN or ln == SLEEP_LEN then
+                                    local bn = string_lower(nm)
+                                    if bn == BUFF_DUST then
+                                        dust = true
+                                        if sleep then break end
+                                    elseif bn == BUFF_SLEEP then
+                                        sleep = true
+                                        if dust then break end
+                                    end
                                 end
                             end
                         end

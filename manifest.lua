@@ -1,10 +1,10 @@
 return {
     api = 1,
-    version = "2026.11.26.1529",
+    version = "2026.11.26.1546",
     scripts = {
-        ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 23644, sha256 = "d33afa5b67b1ae6bd372ec500a6cfa82c567c403c5829eea2f6003832098b693", champion = "Lillia" },
+        ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24219, sha256 = "e91b101841a92720940dbfd41286358346250da57e45b5d98284b2bc5e497871", champion = "Lillia" },
         ["LowkeyChampions"] = { file = "scripts/core/LowkeyChampions.lua", bytes = 27399, sha256 = "93c98170af6b2ca8b89e0060a586429cd3eed58e92807711e19b89aed204f5a0", order = 20 },
-        ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 83428, sha256 = "4495e188c06a10f45cdd57439359616e9c679055069d2c89b4476d1c09fae2bd", order = 10 },
+        ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 85418, sha256 = "03a29fb6995de882257fab5a91f71c74140c2b6ea3d02f22a7d9883e9d1749c9", order = 10 },
         ["LowkeySmite"] = { file = "scripts/core/LowkeySmite.lua", bytes = 15204, sha256 = "d12b87323c1c6e7a169e50a3c1b50995ef9819a8b3bd4f6d4e485b5ed7af9994", order = 10 },
         ["Thresh"] = { file = "scripts/champions/Thresh.lua", bytes = 26839, sha256 = "956e2f733050cc710aa82ad08d06b1fe1bf49a94d582bc63d3192341ba520a48", champion = "Thresh" },
     },

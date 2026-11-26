@@ -686,6 +686,7 @@ local World = {
     highJungle = 0, highAllyMin = 0, highWard = 0, highTurret = 0, highStruct = 0,
     buildings = {}, buildingN = 0, buildingDone = false,
     sweptMin = 0, sweptTur = 0, sweptWard = 0, sweptHero = 0,
+    turretCache = {}, turretCacheN = 0, turretCacheCount = -1,
 }
 
 function World:HeroArgs(u)
@@ -750,6 +751,35 @@ function World:ScanBuildings()
     Trim(out, n, self.buildingN)
     self.buildingN = n
     if n > 0 then self.buildingDone = true end
+end
+
+function World:Turrets()
+    local tc = TurretCount()
+    local n = (type(tc) == "number" and tc >= 0 and tc < 200 and tc) or 0
+    self.sweptTur = n
+    if n ~= self.turretCacheCount then
+        self.turretCacheCount = n
+        local cache = self.turretCache
+        local k = 0
+        for i = 1, n do
+            local u = TurretAt(i)
+            local p = u and u.pos
+            if p then
+                k = k + 1
+                local row = cache[k]
+                if not row then
+                    row = {}
+                    cache[k] = row
+                end
+                row.u = u
+                row.x = p.x
+                row.z = p.z or p.y
+            end
+        end
+        for i = k + 1, self.turretCacheN do cache[i] = nil end
+        self.turretCacheN = k
+    end
+    return self.turretCache, self.turretCacheN
 end
 
 function World:Refresh()
@@ -868,12 +898,13 @@ function World:Refresh()
     local turretN, structN = 0, 0
     local turret, struct = self.turret, self.struct
     self.allyTurret, self.allyTurretHandle = nil, nil
-    local tc = TurretCount()
-    self.sweptTur = (type(tc) == "number" and tc) or 0
-    if tc and tc > 0 and tc < 200 then
-        for i = 1, tc do
-            local u = TurretAt(i)
-            if u and Near(u, byDistance, mx, mz) and Attackable(u) then
+    local cache, cacheN = self:Turrets()
+    for i = 1, cacheN do
+        local row = cache[i]
+        local dx, dz = row.x - mx, row.z - mz
+        if dx * dx + dz * dz <= SCAN_RANGE2 then
+            local u = row.u
+            if Attackable(u) then
                 turretN = turretN + 1
                 turret[turretN] = u
                 local h = u.handle
@@ -1261,6 +1292,7 @@ local Selector = {
     sortBuf = {},
     sortKey = {},
     prioEl = {},
+    penKind = nil, penFlat = 0, penPct = 1, penBonus = 1,
 }
 
 local MenuSortMode = Menu.target["mode" .. MY_NAME]
@@ -1296,9 +1328,43 @@ function Selector:GetPriority(u)
     return self:Priority(u)
 end
 
+function Selector:ReadSelf()
+    local kind = self.damageType
+    if self.penKind == kind then return end
+    self.penKind = kind
+    if kind == DMG_MAGICAL then
+        self.penFlat = myHero.magicPen or 0
+        self.penPct = myHero.magicPenPercent or 1
+        self.penBonus = 1
+    else
+        self.penFlat = myHero.armorPen or 0
+        self.penPct = myHero.armorPenPercent or 1
+        self.penBonus = myHero.bonusArmorPenPercent or 1
+    end
+end
+
+function Selector:Mitigate(u)
+    local bonus, base
+    if self.penKind == DMG_MAGICAL then
+        bonus = u.bonusMagicResist or 0
+        base = (u.magicResist or 0) - bonus
+    else
+        bonus = u.bonusArmor or 0
+        base = (u.armor or 0) - bonus
+    end
+    if base < 0 then base = 0 end
+    local res = base + bonus
+    if res > 0 then
+        res = base * self.penPct + bonus * self.penPct * self.penBonus - self.penFlat
+    end
+    if res >= 0 then return 100 / (100 + res) end
+    return 2 - 100 / (100 - res)
+end
+
 function Selector:Score(u)
     local ehp = (u.health or 0) + Shield(u)
-    local mit = Mitigation(myHero, u, self.damageType)
+    self:ReadSelf()
+    local mit = self:Mitigate(u)
     if mit > 0 then ehp = ehp / mit end
     if ehp < 1 then ehp = 1 end
     local lvl = (u.levelData and u.levelData.lvl) or 1
@@ -1324,6 +1390,8 @@ function Selector:Refresh()
     if self.frame == Frame.n then return end
     self.frame = Frame.n
     self.mode = MenuSortMode:Value()
+    self.penKind = nil
+    self:ReadSelf()
     local n = 0
     local unit, key = self.unit, self.key
     local hook = Hooks.Untargetable
