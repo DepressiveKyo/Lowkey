@@ -336,7 +336,10 @@ local CLOCK = os and os.clock
 local PROF_WINDOW = 256
 local PROF_KEYS = { "world", "select", "farm", "champT", "input", "walk", "ownD", "champD" }
 local PROF_N = 8
-local Prof = { frames = 0, text = "profile warming up", sweptSum = 0, sweptN = 0 }
+local PROF_COUNTS = { "enemies", "lane", "jungle", "farm", "min", "tur", "ward", "hero" }
+local PROF_CN = 8
+local Prof = { frames = 0, text = "profile warming up", samples = 0, sum = {}, labels = {} }
+for i = 1, PROF_CN do Prof.sum[i] = 0 end
 for i = 1, PROF_N do Prof[PROF_KEYS[i]] = 0 end
 
 local function ProfOn()
@@ -347,12 +350,20 @@ local function ProfAdd(key, started)
     Prof[key] = Prof[key] + (CLOCK() - started)
 end
 
-local function ProfSwept(n)
-    Prof.sweptSum = Prof.sweptSum + n
-    Prof.sweptN = Prof.sweptN + 1
+local function ProfSample(a, b, c, d, e, f, g, h)
+    local sum = Prof.sum
+    sum[1] = sum[1] + a
+    sum[2] = sum[2] + b
+    sum[3] = sum[3] + c
+    sum[4] = sum[4] + d
+    sum[5] = sum[5] + e
+    sum[6] = sum[6] + f
+    sum[7] = sum[7] + g
+    sum[8] = sum[8] + h
+    Prof.samples = Prof.samples + 1
 end
 
-local function ProfRoll(counts)
+local function ProfRoll()
     Prof.frames = Prof.frames + 1
     if Prof.frames < PROF_WINDOW then return end
     local total = 0
@@ -371,15 +382,25 @@ local function ProfRoll(counts)
         Prof[key] = 0
     end
     Prof.text = format("frame %.2fms | %s", total, concat(parts, "  "))
-    local swept = (Prof.sweptN > 0 and Prof.sweptSum / Prof.sweptN) or 0
+
+    local samples = Prof.samples
+    local sum = Prof.sum
+    local labels = Prof.labels
+    local swept = 0
+    for i = 1, PROF_CN do
+        local mean = (samples > 0 and sum[i] / samples) or 0
+        if i >= 5 then swept = swept + mean end
+        labels[i] = format("%s %.1f", PROF_COUNTS[i], mean)
+        sum[i] = 0
+    end
+    Prof.samples = 0
     if swept >= 1 then
         Prof.text = Prof.text .. format("  | %.0f swept, %.2fus each", swept, worldMs * 1000 / swept)
     end
-    Prof.sweptSum, Prof.sweptN = 0, 0
     Prof.frames = 0
     local lk = _G.Lowkey
     if lk and lk.Log then
-        lk:Log("perf", (counts and (Prof.text .. " | " .. counts)) or Prof.text)
+        lk:Log("perf", Prof.text .. " | " .. concat(labels, " "))
     end
 end
 
@@ -1239,7 +1260,10 @@ local Selector = {
     damageType = DMG_PHYSICAL,
     sortBuf = {},
     sortKey = {},
+    prioEl = {},
 }
+
+local MenuSortMode = Menu.target["mode" .. MY_NAME]
 
 local function InferPriority(u)
     local dps = (u.totalDamage or 0) * (u.attackSpeed or 1) + (u.ap or 0) * 0.5
@@ -1254,8 +1278,13 @@ local function InferPriority(u)
 end
 
 function Selector:Priority(u)
-    local name = u.charName
-    local el = name and Menu.prio[name]
+    local id = u.networkID
+    local el = self.prioEl[id]
+    if el == nil then
+        local name = u.charName
+        el = name and Menu.prio[name]
+        if el then self.prioEl[id] = el end
+    end
     if el then
         local v = el:Value()
         if v and v > 0 then return v end
@@ -1294,7 +1323,7 @@ end
 function Selector:Refresh()
     if self.frame == Frame.n then return end
     self.frame = Frame.n
-    self.mode = Menu.target["mode" .. MY_NAME]:Value()
+    self.mode = MenuSortMode:Value()
     local n = 0
     local unit, key = self.unit, self.key
     local hook = Hooks.Untargetable
@@ -2686,7 +2715,9 @@ Callback.Add("Tick", function()
         ProfAdd("world", t)
         t = CLOCK()
     end
-    Selector:Refresh()
+    if not Walker.IsNone then
+        Selector:Refresh()
+    end
     if prof then
         ProfAdd("select", t)
         t = CLOCK()
@@ -2701,7 +2732,8 @@ Callback.Add("Tick", function()
     end
     if prof then
         ProfAdd("champT", t)
-        ProfSwept(World.sweptMin + World.sweptTur + World.sweptWard + World.sweptHero)
+        ProfSample(World.enemyN, World.laneN, World.jungleN, Farm.minionN,
+            World.sweptMin, World.sweptTur, World.sweptWard, World.sweptHero)
     end
 end)
 
@@ -2731,9 +2763,7 @@ Callback.Add("Draw", function()
     end
     if prof then
         ProfAdd("champD", t)
-        ProfRoll(format("enemies %d lane %d jungle %d farm %d | min %d tur %d ward %d hero %d",
-            World.enemyN or 0, World.laneN or 0, World.jungleN or 0, Farm.minionN or 0,
-            World.sweptMin or 0, World.sweptTur or 0, World.sweptWard or 0, World.sweptHero or 0))
+        ProfRoll()
     end
 end)
 
