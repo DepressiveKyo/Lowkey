@@ -1424,7 +1424,9 @@ function Farm:Predict(target, horizon)
                     end
                     local first = self.atkStart[i] + self.atkWindup[i] + fly - now
                     if first < 0 then
-                        first = first + ceil(-first / anim) * anim
+                        local nextStart = self.atkEnd[i]
+                        if nextStart < now then nextStart = now end
+                        first = (nextStart - now) + self.atkWindup[i] + fly
                     end
                     if first < horizon then
                         local hits = floor((horizon - first) / anim) + 1
@@ -1453,11 +1455,15 @@ function Farm:Predict(target, horizon)
                         local p = m.pathing
                         local extra = (p and p.hasMovePath) and 250 or 0
                         local d = Dist(m, target)
-                        if d < range + extra then
-                            local speed = ad.projectileSpeed or 0
+                        local speed = ad.projectileSpeed
+                        if not speed or speed <= 0 then
+                            speed = (BaseRangeOf(m) < MELEE_CUT) and HUGE or nil
+                        end
+                        local windup = ad.windUpTime
+                        if d < range + extra and speed and windup and windup > 0 then
                             local reach = d > range and range or d
-                            local fly = speed > 0 and reach / speed or 0
-                            local first = (ad.windUpTime or 0) + fly
+                            local fly = (speed < HUGE) and reach / speed or 0
+                            local first = windup + fly
                             if first < horizon then
                                 local hits = floor((horizon - first) / anim) + 1
                                 if hits > MAX_PREDICT_HITS then hits = MAX_PREDICT_HITS end
@@ -1509,20 +1515,32 @@ function Farm:Refresh()
             local s = src.activeSpell
             if s and s.valid and s.isAutoAttack and s.target and s.target > 0 then
                 local endTime = s.endTime
+                local ad = src.attackData
                 local anim = s.animation
-                local windup = s.windup
-                if src.type == Obj_AI_Turret then
-                    local ad = src.attackData
-                    if ad then
-                        local w = ad.windUpTime
-                        if w and w > 0 then windup = w end
-                        if not anim or anim <= 0.05 then anim = ad.animationTime end
-                    end
+                if not anim or anim <= 0.05 then
+                    anim = ad and ad.animationTime
                 end
-                if endTime and anim and windup and anim > 0.05 and endTime > now then
+                local windup = s.windup
+                if not windup or windup <= 0 then
+                    windup = ad and ad.windUpTime
+                end
+                local speed = s.speed
+                if not speed or speed <= 0 then
+                    speed = ad and ad.projectileSpeed
+                end
+                if not speed or speed <= 0 then
+                    speed = (BaseRangeOf(src) < MELEE_CUT) and HUGE or nil
+                end
+                if
+                    endTime
+                    and endTime > now
+                    and anim and anim > 0.05
+                    and windup and windup > 0
+                    and speed
+                then
                     atkN = atkN + 1
                     self.atkTarget[atkN] = s.target
-                    self.atkSpeed[atkN] = s.speed or 0
+                    self.atkSpeed[atkN] = speed
                     self.atkEnd[atkN] = endTime
                     self.atkAnim[atkN] = anim
                     self.atkWindup[atkN] = windup

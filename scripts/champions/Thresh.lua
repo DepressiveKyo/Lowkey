@@ -2,7 +2,7 @@ if _G.__LOWKEY_THRESH_LOADED then return end
 _G.__LOWKEY_THRESH_LOADED = true
 if myHero.charName ~= "Thresh" then return end
 
-local VERSION = "1.2"
+local VERSION = "1.3"
 local SCRIPT_NAME = "Lowkey Thresh"
 
 local PredTries = 0
@@ -87,7 +87,6 @@ local S = {
     attacking = false,
     mode = 0,
     ti = 0,
-    souls = 0,
 }
 
 local SentTick = {}
@@ -275,19 +274,6 @@ local function SyncSelf()
     S.qRaw = (S.qLv > 0 and Q_BASE[S.qLv] + Q_AP * S.ap) or 0
     S.eRaw = (S.eLv > 0 and E_BASE[S.eLv] + E_AP * S.ap) or 0
     S.rRaw = (S.rLv > 0 and R_BASE[S.rLv] + R_AP * S.ap) or 0
-
-    S.souls = 0
-    local bc = myHero.buffCount
-    if bc then
-        for i = 0, bc - 1 do
-            local b = myHero:GetBuff(i)
-            if b and b.count and b.count > 0 and b.name then
-                if string_lower(b.name) == "threshpassivesouls" then
-                    S.souls = b.count
-                end
-            end
-        end
-    end
 
     S.attacking = IsAttacking()
     S.mode = OrbMode()
@@ -560,7 +546,6 @@ end
 
 local PC = {
     res = false, x = 810, y = 870,
-    souls = -1, soulText = "SOULS 0",
     cdText = { "Q", "W", "E", "R" },
     cdReady = { false, false, false, false },
     lastCd = {}, lastLv = {},
@@ -602,11 +587,6 @@ local function DrawPanel()
             PC.y = res.y - 210
         end
     end
-    if PC.souls ~= S.souls then
-        PC.souls = S.souls
-        PC.soulText = string_format("SOULS %d", S.souls)
-    end
-
     PanelCell(1, S.qCd, S.qR, S.qLv)
     PanelCell(2, S.wCd, S.wR, S.wLv)
     PanelCell(3, S.eCd, S.eR, S.eLv)
@@ -617,9 +597,8 @@ local function DrawPanel()
         Draw.Rect(x, y, 300, 56, COL_BG)
         Draw.Rect(x, y, 300, 2, COL_BORD)
     end
-    DrawText(PC.soulText, 12, x + 10, y + 8, COL_RDY)
-    DrawText((S.hooked and "HOOKED") or "hook", 12, x + 110, y + 8, (S.hooked and COL_HOOK) or COL_OFF)
-    DrawText((AHn > 0 and string_format("ALLIES %d", AHn)) or "allies 0", 12, x + 200, y + 8, COL_OFF)
+    DrawText((S.hooked and "HOOKED") or "hook", 12, x + 10, y + 8, (S.hooked and COL_HOOK) or COL_OFF)
+    DrawText((AHn > 0 and string_format("ALLIES %d", AHn)) or "allies 0", 12, x + 110, y + 8, COL_OFF)
 
     for i = 1, 4 do
         DrawText(PC.cdText[i], 12, x + 10 + (i - 1) * 72, y + 32, (PC.cdReady[i] and COL_RDY) or COL_CD)
