@@ -168,6 +168,8 @@ local Lowkey = {
     manifest = nil,
     loaded = {},
     failed = {},
+    errors = {},
+    errorCount = 0,
     state = "manifest",
 }
 _G.Lowkey = Lowkey
@@ -219,10 +221,19 @@ end
 
 function Lowkey:Guard(who, fn, tag)
     local seen = {}
+    local key = tostring(who) .. " " .. tostring(tag)
     return function(...)
         local ok, err = pcall(fn, ...)
         if ok then return end
+        local rec = self.errors[key]
+        if not rec then
+            rec = { who = tostring(who), tag = tostring(tag), count = 0, text = "" }
+            self.errors[key] = rec
+            self.errorCount = self.errorCount + 1
+        end
+        rec.count = rec.count + 1
         local text = tostring(tag) .. ": " .. tostring(err)
+        rec.text = text
         if seen[text] then return end
         seen[text] = true
         self:Crash(who, text)

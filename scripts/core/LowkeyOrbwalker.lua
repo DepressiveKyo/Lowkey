@@ -304,6 +304,7 @@ local function BuildMenu()
     root.draws:MenuElement({ id = "cursor", name = "Cursor", value = false })
     root.draws:MenuElement({ id = "mode", name = "Active mode", value = true })
     root.draws:MenuElement({ id = "profile", name = "Frame cost (ms per section)", value = false })
+    root.draws:MenuElement({ id = "errors", name = "Script errors", value = true })
 
     root:MenuElement({ name = "", type = SPACE, id = "gap" })
     root:MenuElement({
@@ -2504,6 +2505,21 @@ function Walker:OnDraw()
             Draw.Text(Prof.text, 13, 20, sh - 300, Palette.text)
         end
     end
+    if d.errors:Value() then
+        local lk = _G.Lowkey
+        local n = lk and lk.errorCount
+        if n and n > 0 then
+            local sw, sh = Screen()
+            if sw > 0 then
+                local y = sh - 340
+                for _, rec in pairs(lk.errors) do
+                    Draw.Text(format("%s %s failed %dx", rec.who, rec.tag, rec.count),
+                        13, 20, y, Palette.selected)
+                    y = y - 16
+                end
+            end
+        end
+    end
 end
 
 Walker:RegisterKey(MODE_COMBO, Menu.keys.combo)
@@ -2647,6 +2663,12 @@ local ticks = {}
 local draws = {}
 local wndmsgs = {}
 
+local function Protect(fn, tag)
+    local lk = _G.Lowkey
+    if lk and lk.Guard then return lk:Guard(__name__, fn, tag) end
+    return fn
+end
+
 _G.SDK = {
     LowkeyVersion = __version__,
     OnTick = ticks,
@@ -2761,7 +2783,7 @@ Callback.Add("WndMsg", function(msg, wParam)
     end
 end)
 
-Callback.Add("Tick", function()
+Callback.Add("Tick", Protect(function()
     Frame.n = Frame.n + 1
     Net:Refresh()
     local prof = ProfOn()
@@ -2805,9 +2827,9 @@ Callback.Add("Tick", function()
         ProfSample(World.enemyN, World.laneN, World.jungleN, Farm.minionN,
             World.sweptMin, World.sweptTur, World.sweptWard, World.sweptHero)
     end
-end)
+end, "tick"))
 
-Callback.Add("Draw", function()
+Callback.Add("Draw", Protect(function()
     if World.frame < 0 then return end
     Frame.draw = Frame.draw + 1
     local prof = ProfOn()
@@ -2835,7 +2857,7 @@ Callback.Add("Draw", function()
         ProfAdd("champD", t)
         ProfRoll()
     end
-end)
+end, "draw"))
 
 Callback.Add("UnLoad", function()
     Input:ReleaseTco()
