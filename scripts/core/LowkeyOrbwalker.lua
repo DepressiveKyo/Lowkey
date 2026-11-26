@@ -330,13 +330,20 @@ end
 Net:Refresh()
 
 local Hooks = {
+    BaseRange = nil,
     ExtraRange = nil,
+    InRange = nil,
     MissileSpeed = nil,
     Windup = nil,
+    Animation = nil,
     Melee = nil,
     Channeling = nil,
     AllowMoveWhileChanneling = nil,
     BlockAttack = nil,
+    BlockMove = nil,
+    ForceMove = nil,
+    AttackReset = nil,
+    PriorityTarget = nil,
     StaticDamage = nil,
     BonusAutoAttackDamage = nil,
     Untargetable = nil,
@@ -901,7 +908,15 @@ local function BaseRangeOf(u)
 end
 
 local function AttackRange(from, target)
-    local r = BaseRangeOf(from) + (from.boundingRadius or 0)
+    local base = BaseRangeOf(from)
+    if from.isMe then
+        local hook = Hooks.BaseRange
+        if hook then
+            local v = hook()
+            if v then base = v end
+        end
+    end
+    local r = base + (from.boundingRadius or 0)
     if not target then
         return r + 35
     end
@@ -922,7 +937,10 @@ end
 local function InAttackRange(target)
     if not target then return false end
     local r = MyAttackRange(target)
-    return DistSq(myHero, target) <= r * r
+    if DistSq(myHero, target) <= r * r then return true end
+    local hook = Hooks.InRange
+    if hook and hook(target) then return true end
+    return false
 end
 
 local Timing = {
@@ -940,6 +958,11 @@ local Timing = {
 function Timing:Animation()
     local ad = myHero.attackData
     local a = ad and ad.animationTime
+    local hook = Hooks.Animation
+    if hook then
+        local v = hook(a)
+        if v then return v end
+    end
     if a and a > 0.05 then return a end
     local mult = myHero.attackSpeed
     if not mult or mult <= 0 then mult = 1 end
@@ -1075,6 +1098,8 @@ local function Channeling()
 end
 
 local function SelfCanMove()
+    local block = Hooks.BlockMove
+    if block and block() then return false end
     if Channeling() then
         local allow = Hooks.AllowMoveWhileChanneling
         if not (allow and allow()) then return false end
@@ -2058,6 +2083,8 @@ function Walker:CanMove(unit)
         if self.canMoveC and not self.canMoveC() then return false end
         if (JustEvade and JustEvade.Evading()) or (ExtLibEvade and ExtLibEvade.Evading) then return false end
         if not SelfCanMove() then return false end
+        local force = Hooks.ForceMove
+        if force and force() then return true end
         return not Timing:IsActive()
     end
     local ad = unit.attackData
@@ -2071,6 +2098,11 @@ function Walker:GetTarget()
         return forced
     end
     if ModeState[MODE_FLEE] then return nil end
+    local hook = Hooks.PriorityTarget
+    if hook then
+        local u = hook(ModeState)
+        if Alive(u) and InAttackRange(u) then return u end
+    end
     if ModeState[MODE_COMBO] then return Selector:GetComboTarget() end
     if ModeState[MODE_LASTHIT] then return Farm:GetLastHitTarget() end
     if ModeState[MODE_JUNGLECLEAR] then
@@ -2506,6 +2538,10 @@ Callback.Add("Tick", function()
     World:Refresh()
     Walker:GetModes()
     Timing:Observe()
+    local resetHook = Hooks.AttackReset
+    if resetHook and resetHook() then
+        Timing.reset = true
+    end
     Selector:Refresh()
     Farm:Refresh()
     for i = 1, #ticks do

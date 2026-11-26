@@ -18,6 +18,11 @@ if (-not $Version) {
 $sha = [System.Security.Cryptography.SHA256]::Create()
 $entries = @()
 
+$explicitOrder = @{
+    "LowkeyOrbwalker" = 10
+    "LowkeyChampions" = 20
+}
+
 foreach ($file in Get-ChildItem $scriptsDir -Recurse -File -Filter "*.lua" | Sort-Object FullName) {
     $rel = $file.FullName.Substring($RepoRoot.Length + 1).Replace("\", "/")
     $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
@@ -33,6 +38,10 @@ foreach ($file in Get-ChildItem $scriptsDir -Recurse -File -Filter "*.lua" | Sor
         $order = 100
     } elseif ($parent -eq "core") {
         $order = 10
+    }
+
+    if ($explicitOrder.ContainsKey($name)) {
+        $order = $explicitOrder[$name]
     }
 
     $entries += [PSCustomObject]@{
