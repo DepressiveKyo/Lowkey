@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.5"
+local VERSION = "1.6"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -13,6 +13,7 @@ local math_min = math.min
 local math_floor = math.floor
 local math_sqrt = math.sqrt
 local string_format = string.format
+local string_find = string.find
 local type = type
 local pcall = pcall
 local tostring = tostring
@@ -241,6 +242,78 @@ local function BuffMapOf(unit)
     return BuffSrc:GetBuffMap(unit)
 end
 
+local PT = {
+    x = {}, z = {}, n = 0, memo = {}, seen = 0, frame = -1,
+    owner = "Yasuo", mark = "_E_timer", slack = 40, cap = 2048, wipe = 4000,
+}
+
+local function ScanParticles()
+    if PT.frame == TICK then return end
+    PT.frame = TICK
+    PT.n = 0
+    if not S.eR then return end
+    local count, at = Game.ParticleCount, Game.Particle
+    if type(count) ~= "function" or type(at) ~= "function" then return end
+    local total = count()
+    if type(total) ~= "number" or total <= 0 then return end
+    if total > PT.cap then total = PT.cap end
+    if PT.seen > PT.wipe then
+        PT.memo = {}
+        PT.seen = 0
+    end
+    local memo, xs, zs = PT.memo, PT.x, PT.z
+    local n = 0
+    for i = 1, total do
+        local part = at(i)
+        if part then
+            local id = part.networkID
+            local hit = memo[id]
+            if hit == nil then
+                local nm = part.name
+                hit = type(nm) == "string"
+                    and string_find(nm, PT.owner, 1, true) ~= nil
+                    and string_find(nm, PT.mark, 1, true) ~= nil
+                memo[id] = hit
+                PT.seen = PT.seen + 1
+            end
+            if hit then
+                local pos = part.pos
+                if pos then
+                    n = n + 1
+                    xs[n], zs[n] = pos.x, pos.z
+                end
+            end
+        end
+    end
+    PT.n = n
+end
+
+local function MarkedByParticle(ux, uz, br)
+    if PT.n == 0 then return false end
+    local reach = (br or 60) + PT.slack
+    local r2 = reach * reach
+    local xs, zs = PT.x, PT.z
+    for i = 1, PT.n do
+        local dx, dz = ux - xs[i], uz - zs[i]
+        if dx * dx + dz * dz <= r2 then return true end
+    end
+    return false
+end
+
+local function Marked(unit)
+    local pos = unit.pos
+    if pos then
+        ScanParticles()
+        if MarkedByParticle(pos.x, pos.z, unit.boundingRadius) then return true end
+    end
+    local map = BuffMapOf(unit)
+    if not map then return false end
+    for m = 1, 3 do
+        if map[EMARKS[m]] then return true end
+    end
+    return false
+end
+
 local function HasKnock(unit)
     if BuffApi == nil then
         local sdk = _G.SDK
@@ -414,15 +487,7 @@ local function SyncEnemies()
 
             local mark, knock = false, false
             if d2 <= R_RANGE2 then
-                local map = BuffMapOf(h)
-                if map then
-                    for m = 1, 3 do
-                        if map[EMARKS[m]] then
-                            mark = true
-                            break
-                        end
-                    end
-                end
+                mark = Marked(h)
                 knock = HasKnock(h)
                 if knock then knocked = knocked + 1 end
             end
@@ -894,15 +959,6 @@ local function Q3Worth()
     if not Menu.combo.q3Only:Value() then return true end
     for i = 1, EHn do
         if EHd2[i] <= Q3_RANGE2 then return true end
-    end
-    return false
-end
-
-local function Marked(unit)
-    local map = BuffMapOf(unit)
-    if not map then return false end
-    for m = 1, 3 do
-        if map[EMARKS[m]] then return true end
     end
     return false
 end
