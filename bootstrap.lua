@@ -14,6 +14,7 @@ if not LOCAL_ROOT:match("[/\\]$") then LOCAL_ROOT = LOCAL_ROOT .. "/" end
 LOCAL_ROOT = LOCAL_ROOT .. "Lowkey/"
 
 local MANIFEST_LOCAL = LOCAL_ROOT .. "manifest.lua"
+local MANIFEST_STAGE = LOCAL_ROOT .. "manifest.remote.lua"
 local MANIFEST_URL = BASE_URL .. "manifest.lua"
 local MANIFEST_LIMIT = 1048576
 
@@ -233,8 +234,8 @@ function Lowkey:Sha256(data)
     return Sha256(data)
 end
 
-local function ParseManifest()
-    local body = ReadFile(MANIFEST_LOCAL, MANIFEST_LIMIT)
+local function ParseManifestAt(path)
+    local body = ReadFile(path, MANIFEST_LIMIT)
     if not body or #body < 2 then return nil, "manifest missing" end
     local chunk, reason = loadstring(body, "@Lowkey/manifest")
     if not chunk then return nil, tostring(reason) end
@@ -243,7 +244,11 @@ local function ParseManifest()
     if type(data) ~= "table" or data.api ~= 1 or type(data.scripts) ~= "table" then
         return nil, "unsupported manifest"
     end
-    return data
+    return data, body
+end
+
+local function ParseManifest()
+    return ParseManifestAt(MANIFEST_LOCAL)
 end
 
 local function WantsThisChampion(entry)
@@ -328,16 +333,33 @@ local function LoadAll()
     local names = SortedNames(manifest.scripts)
     local count = 0
     local shared = false
+    local blocked = nil
+    local coreFailed = nil
     for i = 1, #names do
         local name = names[i]
         local entry = manifest.scripts[name]
-        if not shared and (entry.order or 100) >= 100 then
+        local order = entry.order or 100
+        if not shared and order >= 100 then
             shared = true
-            PreloadShared()
+            if _G.SDK == nil then
+                blocked = coreFailed or "the orbwalker"
+                SharedState = "not loaded, " .. blocked .. " failed"
+            else
+                PreloadShared()
+            end
         end
-        if WantsThisChampion(entry) then
+        if order >= 100 and blocked then
+            if WantsThisChampion(entry) then
+                Lowkey.failed[name] = "skipped, " .. blocked .. " failed"
+                print("[Lowkey] " .. name .. " skipped: " .. blocked .. " failed")
+            end
+        elseif WantsThisChampion(entry) then
             RunEntry(name, entry)
-            if Lowkey.loaded[name] then count = count + 1 end
+            if Lowkey.loaded[name] then
+                count = count + 1
+            elseif order < 100 then
+                coreFailed = name
+            end
         end
     end
     if not shared then PreloadShared() end
@@ -373,12 +395,32 @@ local function FetchUpdates()
 end
 
 local function AfterManifest()
-    local manifest, reason = ParseManifest()
+    local manifest, body = ParseManifestAt(MANIFEST_STAGE)
     if not manifest then
-        print("[Lowkey] update check failed: " .. tostring(reason))
+        print("[Lowkey] update check failed: " .. tostring(body))
+        Discard(MANIFEST_STAGE, false)
         return
     end
+    local running = Lowkey.manifest and tostring(Lowkey.manifest.version or "")
+    local remote = tostring(manifest.version or "")
+    if running and running ~= "" and remote <= running then
+        if remote < running then
+            print(format("[Lowkey] keeping manifest %s, the remote offers %s", running, remote))
+        end
+        Discard(MANIFEST_STAGE, false)
+        return
+    end
+    local out = io.open(MANIFEST_LOCAL, "wb")
+    if not out then
+        print("[Lowkey] cannot replace the local manifest")
+        Discard(MANIFEST_STAGE, false)
+        return
+    end
+    out:write(body)
+    out:close()
+    Discard(MANIFEST_STAGE, false)
     Lowkey.remote = manifest
+    print(format("[Lowkey] manifest %s -> %s", tostring(running), remote))
     FetchUpdates()
 end
 
@@ -474,7 +516,7 @@ LoadFromDisk()
 
 if AUTO_UPDATE then
     Callback.Add("Tick", OnTick)
-    Download(MANIFEST_URL, MANIFEST_LOCAL, AfterManifest)
+    Download(MANIFEST_URL, MANIFEST_STAGE, AfterManifest)
 end
 
 return Lowkey
