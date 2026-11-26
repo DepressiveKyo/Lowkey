@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.2"
+local VERSION = "1.3"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -46,6 +46,8 @@ local Q_AD = 1.05
 
 local Q3_RANGE, Q3_RANGE2 = 1100, 1100 * 1100
 local Q3_RADIUS, Q3_SPEED = 90, 1200
+local Q_ARC2 = 230 * 230
+local FARM_SLACK = 20
 
 local E_RANGE, E_RANGE2 = 475, 475 * 475
 local E_BASE = { 60, 70, 80, 90, 100 }
@@ -112,6 +114,11 @@ local EHhp, EHarm = {}, {}
 local EHmark, EHknock = {}, {}
 local EHn = 0
 
+local CMo, CMx, CMz, CMbr = {}, {}, {}, {}
+local CMn = 0
+local JMo, JMx, JMz, JMbr = {}, {}, {}, {}
+local JMn = 0
+
 local EList, EListN = {}, 0
 local HeroSeen = -1
 
@@ -162,8 +169,16 @@ Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
 Menu.harass:MenuElement({ id = "useQ", name = "Use Q", value = true })
 Menu.harass:MenuElement({ id = "q3Only", name = "Only the Q3 tornado", value = true })
 
+Menu.harass:MenuElement({ id = "stackQ", name = "Stack Q on minions", value = true })
+
 Menu:MenuElement({ type = MENU, id = "clear", name = "Clear" })
 Menu.clear:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.clear:MenuElement({ id = "useQ3", name = "Use Q3 tornado", value = true })
+Menu.clear:MenuElement({ id = "q3Min", name = "Q3 on lane minions, hit at least", value = 2, min = 1, max = 6, step = 1 })
+Menu.clear:MenuElement({ id = "useE", name = "Use E to dash through them", value = true })
+
+Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last Hit" })
+Menu.lasthit:MenuElement({ id = "useQ", name = "Use Q", value = true })
 
 Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
 Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
@@ -389,6 +404,90 @@ local function SyncEnemies()
     EHn = n
     S.ti = ti
     S.knocked = knocked
+end
+
+local function Harvest(src, srcN, uo, ux, uz, ubr, prev)
+    local n = 0
+    if src then
+        local sx, sz = S.x, S.z
+        for i = 1, srcN do
+            local u = src[i]
+            if u and u.valid and u.visible and not u.dead and u.isTargetable and not u.isImmortal then
+                local p = u.pos
+                if p then
+                    local dx, dz = p.x - sx, p.z - sz
+                    if dx * dx + dz * dz <= Q3_RANGE2 then
+                        n = n + 1
+                        uo[n] = u
+                        ux[n], uz[n] = p.x, p.z
+                        ubr[n] = u.boundingRadius or 60
+                    end
+                end
+            end
+        end
+    end
+    for i = n + 1, prev do uo[i] = nil end
+    return n
+end
+
+local function SyncMinions()
+    local mode = S.mode
+    if mode ~= 2 and mode ~= 3 and mode ~= 4 then
+        for i = 1, CMn do CMo[i] = nil end
+        for i = 1, JMn do JMo[i] = nil end
+        CMn, JMn = 0, 0
+        return
+    end
+    local sdk = _G.SDK
+    local w = sdk and sdk.Snapshot
+    if not w then
+        CMn, JMn = 0, 0
+        return
+    end
+    CMn = Harvest(w.lane, w.laneN or 0, CMo, CMx, CMz, CMbr, CMn)
+    JMn = Harvest(w.jungle, w.jungleN or 0, JMo, JMx, JMz, JMbr, JMn)
+end
+
+local function OnSegment(ax, az, bx, bz, cx, cz)
+    local abx, abz = bx - ax, bz - az
+    local den = abx * abx + abz * abz
+    if den < 1 then return ax, az, false end
+    local raw = ((cx - ax) * abx + (cz - az) * abz) / den
+    if raw < 0 or raw > 1 then return ax, az, false end
+    return ax + raw * abx, az + raw * abz, true
+end
+
+local function CountArc(cx, cz, n, xs, zs)
+    local c = 0
+    for i = 1, n do
+        local dx, dz = xs[i] - cx, zs[i] - cz
+        if dx * dx + dz * dz <= Q_ARC2 then c = c + 1 end
+    end
+    return c
+end
+
+local function CountLine(tx, tz, n, xs, zs, brs)
+    local c = 0
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local jx, jz, on = OnSegment(sx, sz, tx, tz, xs[i], zs[i])
+        if on then
+            local reach = Q3_RADIUS + brs[i]
+            local dx, dz = xs[i] - jx, zs[i] - jz
+            if dx * dx + dz * dz <= reach * reach then c = c + 1 end
+        end
+    end
+    return c
+end
+
+local function HealthAfter(unit, delay)
+    local sdk = _G.SDK
+    local hp = sdk and sdk.HealthPrediction
+    if hp and hp.GetPrediction then
+        local ok, v = pcall(hp.GetPrediction, hp, unit, delay)
+        if ok and type(v) == "number" then return v end
+    end
+    return unit.health or 0
 end
 
 local function EnemyTurrets()
@@ -793,11 +892,105 @@ local function RunCombo()
     end
 end
 
+local function QFarmReady()
+    return S.qR and not S.casting and SentTick[SQ] ~= TICK
+end
+
+local function BestArc(n, xs, zs)
+    local reach = Q_RANGE + FARM_SLACK
+    local reach2 = reach * reach
+    local sx, sz = S.x, S.z
+    local bx, bz, best = nil, nil, 0
+    for i = 1, n do
+        local dx, dz = xs[i] - sx, zs[i] - sz
+        if dx * dx + dz * dz <= reach2 then
+            local c = CountArc(xs[i], zs[i], n, xs, zs)
+            if c > best then bx, bz, best = xs[i], zs[i], c end
+        end
+    end
+    return bx, bz, best
+end
+
+local function BestLine(n, xs, zs, brs, least)
+    local bx, bz, best = nil, nil, least
+    for i = 1, n do
+        local c = CountLine(xs[i], zs[i], n, xs, zs, brs)
+        if c >= best then bx, bz, best = xs[i], zs[i], c end
+    end
+    return bx, bz
+end
+
+local function StackQ()
+    if not QFarmReady() or S.hasQ3 then return false end
+    local bx, bz = BestArc(JMn, JMx, JMz)
+    if not bx then bx, bz = BestArc(CMn, CMx, CMz) end
+    if not bx then return false end
+    return Send(HK_Q, SQ, bx, bz)
+end
+
+local function FarmQ(useQ3, useQ, q3Min)
+    if not QFarmReady() then return false end
+    if S.hasQ3 then
+        if not useQ3 then return false end
+        local bx, bz = BestLine(JMn, JMx, JMz, JMbr, 1)
+        if not bx then bx, bz = BestLine(CMn, CMx, CMz, CMbr, q3Min) end
+        if not bx then return false end
+        return Send(HK_Q, SQ, bx, bz)
+    end
+    if not useQ then return false end
+    local bx, bz = BestArc(JMn, JMx, JMz)
+    if not bx then bx, bz = BestArc(CMn, CMx, CMz) end
+    if not bx then return false end
+    return Send(HK_Q, SQ, bx, bz)
+end
+
+local function FarmE()
+    if not Menu.clear.useE:Value() or not S.eR or S.casting then return false end
+    if SentTick[SE] == TICK then return false end
+    local reach2 = E_RANGE2
+    local sx, sz = S.x, S.z
+    for i = 1, JMn do
+        local dx, dz = JMx[i] - sx, JMz[i] - sz
+        if dx * dx + dz * dz <= reach2 and SendUnit(HK_E, SE, JMo[i]) then return true end
+    end
+    for i = 1, CMn do
+        local dx, dz = CMx[i] - sx, CMz[i] - sz
+        if dx * dx + dz * dz <= reach2 and SendUnit(HK_E, SE, CMo[i]) then return true end
+    end
+    return false
+end
+
+local function RunClear()
+    local node = Menu.clear
+    if FarmQ(node.useQ3:Value(), node.useQ:Value(), node.q3Min:Value()) then return end
+    if FarmE() then return end
+end
+
+local function RunLastHit()
+    if not Menu.lasthit.useQ:Value() or not QFarmReady() or S.hasQ3 then return end
+    local dmg = S.qRaw
+    if dmg <= 0 then return end
+    local reach = Q_RANGE + FARM_SLACK
+    local reach2 = reach * reach
+    local sx, sz = S.x, S.z
+    for i = 1, CMn do
+        local dx, dz = CMx[i] - sx, CMz[i] - sz
+        if dx * dx + dz * dz <= reach2 then
+            local u = CMo[i]
+            if HealthAfter(u, S.qDelay) <= dmg * PhysMul(u.armor) then
+                if Send(HK_Q, SQ, CMx[i], CMz[i]) then return end
+            end
+        end
+    end
+end
+
 local function RunHarass()
-    if not Menu.harass.useQ:Value() then return end
-    if Menu.harass.q3Only:Value() and not S.hasQ3 then return end
-    local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
-    if i ~= 0 then CastQ(i) end
+    local node = Menu.harass
+    if node.useQ:Value() and (S.hasQ3 or not node.q3Only:Value()) then
+        local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
+        if i ~= 0 and CastQ(i) then return end
+    end
+    if node.stackQ:Value() then StackQ() end
 end
 
 local PC = {
@@ -913,6 +1106,7 @@ local function OnTick()
     BuildLists()
     SyncSelf()
     SyncEnemies()
+    SyncMinions()
 
     if GameIsChatOpen() then return end
 
@@ -928,10 +1122,9 @@ local function OnTick()
     elseif S.mode == 2 then
         RunHarass()
     elseif S.mode == 3 then
-        if Menu.clear.useQ:Value() and S.qR then
-            local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
-            if i ~= 0 then CastQ(i) end
-        end
+        RunClear()
+    elseif S.mode == 4 then
+        RunLastHit()
     end
 end
 

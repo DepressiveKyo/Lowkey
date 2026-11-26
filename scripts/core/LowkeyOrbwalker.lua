@@ -2682,6 +2682,7 @@ _G.SDK = {
     Damage = Combat,
     Data = Facade,
     ObjectManager = Objects,
+    Snapshot = World,
     TargetSelector = Selector,
     HealthPrediction = Farm,
     Attack = AttackApi,
