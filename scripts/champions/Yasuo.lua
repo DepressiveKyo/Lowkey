@@ -2,7 +2,7 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local VERSION = "1.7"
+local VERSION = "1.8"
 local SCRIPT_NAME = "Lowkey Yasuo"
 
 local PredTries = 0
@@ -100,6 +100,7 @@ local S = {
     qR = false, wR = false, eR = false, rR = false,
     qRaw = 0, eRaw = 0, rRaw = 0,
     lat = 0.03, eStacks = 0, eDelay = 0.3,
+    penPct = 1, penBonus = 1, penFlat = 0, mpenPct = 1, mpenFlat = 0,
     qDelay = Q_DELAY_MAX,
     qStacks = 0,
     hasQ3 = false,
@@ -161,6 +162,7 @@ Menu.dash:MenuElement({ id = "turretRule", name = "Into enemy turret", value = 2
 Menu.dash:MenuElement({ id = "diveHP", name = "Smart: target HP% below", value = 40, min = 5, max = 100, step = 5, identifier = "%" })
 Menu.dash:MenuElement({ id = "diveMine", name = "Smart: my HP% above", value = 50, min = 0, max = 100, step = 5, identifier = "%" })
 Menu.dash:MenuElement({ id = "crowd", name = "Skip if enemies at landing >=", value = 3, min = 1, max = 5, step = 1 })
+Menu.dash:MenuElement({ id = "particles", name = "Read the E mark from particles", value = true })
 
 Menu:MenuElement({ type = MENU, id = "wall", name = "W Wind Wall" })
 Menu.wall:MenuElement({ id = "key", name = "Cast toward cursor", key = string.byte("G") })
@@ -210,22 +212,13 @@ Menu.draw:MenuElement({ id = "wall", name = "Mark the missile W would block", va
 local function PhysMul(armor, pen)
     local v = armor or 0
     if pen and pen > 0 then v = v * (1 - pen) end
-    local pct = myHero.armorPenPercent
-    if pct and pct > 0 then v = v * pct end
-    local bonus = myHero.bonusArmorPenPercent
-    if bonus and bonus > 0 then v = v * bonus end
-    local flat = myHero.armorPen
-    if flat and flat > 0 then v = v - flat end
+    v = v * S.penPct * S.penBonus - S.penFlat
     if v >= 0 then return 100 / (100 + v) end
     return 2 - 100 / (100 - v)
 end
 
 local function MagicMul(mr)
-    local v = mr or 0
-    local pct = myHero.magicPenPercent
-    if pct and pct > 0 then v = v * pct end
-    local flat = myHero.magicPen
-    if flat and flat > 0 then v = v - flat end
+    local v = (mr or 0) * S.mpenPct - S.mpenFlat
     if v >= 0 then return 100 / (100 + v) end
     return 2 - 100 / (100 - v)
 end
@@ -307,7 +300,7 @@ local function MarkedByParticle(ux, uz, br)
 end
 
 local function Marked(unit)
-    local pos = unit.pos
+    local pos = Menu.dash.particles:Value() and unit.pos
     if pos then
         ScanParticles()
         if MarkedByParticle(pos.x, pos.z, unit.boundingRadius) then return true end
@@ -324,11 +317,20 @@ local function HasKnock(unit)
     if BuffApi == nil then
         local sdk = _G.SDK
         local b = sdk and sdk.BuffManager
-        BuffApi = (b and b.HasBuffTypes and b) or false
+        if not (b and b.HasBuffTypes) then
+            BuffApi = false
+            return false
+        end
+        local ok, r = pcall(b.HasBuffTypes, b, unit, KNOCK_TYPES)
+        if not ok then
+            BuffApi = false
+            return false
+        end
+        BuffApi = b
+        return r == true
     end
     if not BuffApi then return false end
-    local ok, r = pcall(BuffApi.HasBuffTypes, BuffApi, unit, KNOCK_TYPES)
-    return ok and r == true
+    return BuffApi:HasBuffTypes(unit, KNOCK_TYPES) == true
 end
 
 local function OrbMode()
@@ -445,6 +447,17 @@ local function SyncSelf()
         local rs = map[BUFF_ERAMP]
         if rs then S.eStacks = math_min(rs.count or 0, EK.rampMax) end
     end
+    local v = myHero.armorPenPercent
+    S.penPct = (v and v > 0 and v) or 1
+    v = myHero.bonusArmorPenPercent
+    S.penBonus = (v and v > 0 and v) or 1
+    v = myHero.armorPen
+    S.penFlat = (v and v > 0 and v) or 0
+    v = myHero.magicPenPercent
+    S.mpenPct = (v and v > 0 and v) or 1
+    v = myHero.magicPen
+    S.mpenFlat = (v and v > 0 and v) or 0
+
     local sdkD = _G.SDK
     sdkD = sdkD and sdkD.Data
     if sdkD and sdkD.GetLatency then
@@ -476,6 +489,9 @@ local function SyncEnemies()
     end
     local tgtId = tgt and tgt.networkID
     local ti = 0
+    local mode = S.mode
+    local wantMark = S.eR and (mode == 1 or mode == 5)
+    local wantKnock = S.rR
 
     for k = 1, EListN do
         local h = EList[k]
@@ -493,9 +509,11 @@ local function SyncEnemies()
 
             local mark, knock = false, false
             if d2 <= R_RANGE2 then
-                mark = Marked(h)
-                knock = HasKnock(h)
-                if knock then knocked = knocked + 1 end
+                if wantMark and d2 <= E_RANGE2 then mark = Marked(h) end
+                if wantKnock then
+                    knock = HasKnock(h)
+                    if knock then knocked = knocked + 1 end
+                end
             end
             EHmark[n] = mark
             EHknock[n] = knock
@@ -893,14 +911,7 @@ local function FindThreat()
     local radius = MISSILE_PAD + (myHero.boundingRadius or 65) + Menu.wall.pad:Value()
     local window = Menu.wall.window:Value()
 
-    local lat = 0.05
-    local sdk = _G.SDK
-    local dat = sdk and sdk.Data
-    if dat and dat.GetLatency then
-        local ok, v = pcall(dat.GetLatency, dat)
-        if ok and type(v) == "number" and v > 0 then lat = v end
-    end
-    local floorLead = W_CAST + lat
+    local floorLead = W_CAST + S.lat
 
     local bestX, bestZ, bestLead = nil, nil, math_huge
     for i = total, 1, -1 do
