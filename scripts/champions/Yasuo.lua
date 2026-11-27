@@ -112,7 +112,6 @@ local S = {
 }
 
 local SentTick = {}
-local PendCt = {}
 local PendUntil = {}
 
 local EHo, EHx, EHz, EHd2 = {}, {}, {}, {}
@@ -665,9 +664,9 @@ local function AckWindow()
     local d = sdk and sdk.Data
     if d and d.GetLatency then
         local ok, lat = pcall(d.GetLatency, d)
-        if ok and type(lat) == "number" and lat > 0 then return lat * 2 + 0.05 end
+        if ok and type(lat) == "number" and lat > 0 then return lat * 2 + 0.30 end
     end
-    return 0.2
+    return 0.45
 end
 
 local TgtTick = -1
@@ -721,28 +720,19 @@ local function Target(range, range2)
 end
 
 local function SlotFree(slot)
-    local pc = PendCt[slot]
-    if pc == nil then return true end
-    local data = myHero:GetSpellData(slot)
-    local ct = data and data.castTime
-    if ct ~= pc then
-        PendCt[slot] = nil
-        return true
-    end
+    if not PendUntil[slot] then return true end
     if GameCanUseSpell(slot) ~= 0 then
-        PendCt[slot] = nil
+        PendUntil[slot] = nil
         return true
     end
     if GameTimer() >= PendUntil[slot] then
-        PendCt[slot] = nil
+        PendUntil[slot] = nil
         return true
     end
     return false
 end
 
 local function MarkSent(slot)
-    local data = myHero:GetSpellData(slot)
-    PendCt[slot] = (data and data.castTime) or 0
     PendUntil[slot] = GameTimer() + AckWindow()
     SentTick[slot] = TICK
 end

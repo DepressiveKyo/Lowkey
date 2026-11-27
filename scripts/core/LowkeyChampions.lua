@@ -442,11 +442,9 @@ local RESETS = {
 local function InstallResets(entries)
     local count = #entries
     local lastSpell = {}
-    local lastCastTime = {}
     local pending = {}
     for i = 1, count do
         lastSpell[i] = 0
-        lastCastTime[i] = nil
         pending[i] = false
     end
 
@@ -463,18 +461,13 @@ local function InstallResets(entries)
             local data = myHero:GetSpellData(e.slot)
             local level = data and data.level or 0
             if level > 0 then
-                local castTime = data.castTime
-                if lastCastTime[i] == nil then lastCastTime[i] = castTime end
                 local blocked = e.blockBuff and Has(e.blockBuff)
                 if blocked then
                     pending[i] = false
                 else
                     local want = e.name or data.name
-                    local nameOk = (not e.name) or (data.name == e.name)
                     if spellName and want and spellName == want and spellEnd > lastSpell[i] then
                         lastSpell[i] = spellEnd
-                        pending[i] = true
-                    elseif nameOk and castTime and castTime ~= lastCastTime[i] then
                         pending[i] = true
                     end
                     if pending[i] then
@@ -489,7 +482,6 @@ local function InstallResets(entries)
                         end
                     end
                 end
-                lastCastTime[i] = castTime
             end
         end
         return fired
