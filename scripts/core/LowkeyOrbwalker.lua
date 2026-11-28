@@ -1573,6 +1573,9 @@ local Farm = {
     atkN = 0, atkHigh = 0,
     atkTarget = {}, atkSpeed = {}, atkStart = {}, atkWindup = {},
     atkAnim = {}, atkEnd = {}, atkSrc = {}, atkIsTurret = {},
+    amN = 0, amHigh = 0,
+    amU = {}, amIdx = {}, amX = {}, amZ = {}, amReach = {}, amExtra = {},
+    amAnim = {}, amWind = {}, amSpeed = {}, amAimed = {}, amBusy = {},
     dmgBySrc = {},
     staticBuf = {},
     minionN = 0, minionHigh = 0,
@@ -1647,37 +1650,24 @@ function Farm:Predict(target, horizon)
         end
     end
 
-    for i = 1, World.allyMinN do
-        local m = World.allyMin[i]
-        if m.valid and m.visible and not m.dead then
-            local ad = m.attackData
-            if ad then
-                local aimed = ad.target
-                local busy = ad.endTime ~= nil and ad.endTime > now
-                local elsewhere = aimed ~= nil and aimed ~= 0 and aimed ~= handle
-                if not busy and not elsewhere then
-                    local anim = ad.animationTime or 0
-                    if anim > 0.05 then
-                        local range = AttackRange(m, target)
-                        local p = m.pathing
-                        local extra = (p and p.hasMovePath) and 250 or 0
-                        local d = Dist(m, target)
-                        local speed = ad.projectileSpeed
-                        if not speed or speed <= 0 then
-                            speed = (BaseRangeOf(m) < MELEE_CUT) and HUGE or nil
-                        end
-                        local windup = ad.windUpTime
-                        if d < range + extra and speed and windup and windup > 0 then
-                            local reach = d > range and range or d
-                            local fly = (speed < HUGE) and reach / speed or 0
-                            local first = windup + fly
-                            if first < horizon then
-                                local hits = floor((horizon - first) / anim) + 1
-                                if hits > MAX_PREDICT_HITS then hits = MAX_PREDICT_HITS end
-                                hp = hp - hits * self:CachedDamage(-i, m, target)
-                            end
-                        end
-                    end
+    local tx, tz = Pos2(target)
+    local bt = BoundingOf(target)
+    for i = 1, self.amN do
+        local aimed = self.amAimed[i]
+        if not self.amBusy[i] and (aimed == nil or aimed == 0 or aimed == handle) then
+            local dx, dz = self.amX[i] - tx, self.amZ[i] - tz
+            local d = sqrt(dx * dx + dz * dz)
+            local range = self.amReach[i] + bt
+            if d < range + self.amExtra[i] then
+                local speed = self.amSpeed[i]
+                local reach = d > range and range or d
+                local fly = (speed < HUGE) and reach / speed or 0
+                local first = self.amWind[i] + fly
+                if first < horizon then
+                    local anim = self.amAnim[i]
+                    local hits = floor((horizon - first) / anim) + 1
+                    if hits > MAX_PREDICT_HITS then hits = MAX_PREDICT_HITS end
+                    hp = hp - hits * self:CachedDamage(-self.amIdx[i], self.amU[i], target)
                 end
             end
         end
@@ -1699,6 +1689,8 @@ function Farm:ClearLists()
     self.inRangeStructHigh, self.inRangeStructN = 0, 0
     Trim(self.atkSrc, 0, self.atkHigh)
     self.atkHigh, self.atkN = 0, 0
+    Trim(self.amU, 0, self.amHigh)
+    self.amHigh, self.amN = 0, 0
 end
 
 function Farm:Refresh()
@@ -1714,6 +1706,42 @@ function Farm:Refresh()
     end
 
     local now = Timer()
+
+    local amN = 0
+    for i = 1, World.allyMinN do
+        local m = World.allyMin[i]
+        if m.valid and m.visible and not m.dead then
+            local ad = m.attackData
+            if ad then
+                local anim = ad.animationTime or 0
+                local windup = ad.windUpTime
+                if anim > 0.05 and windup and windup > 0 then
+                    local speed = ad.projectileSpeed
+                    if not speed or speed <= 0 then
+                        speed = (BaseRangeOf(m) < MELEE_CUT) and HUGE or nil
+                    end
+                    if speed then
+                        local x, z = Pos2(m)
+                        local path = m.pathing
+                        amN = amN + 1
+                        self.amU[amN] = m
+                        self.amIdx[amN] = i
+                        self.amX[amN], self.amZ[amN] = x, z
+                        self.amReach[amN] = BaseRangeOf(m) + (m.boundingRadius or 0)
+                        self.amExtra[amN] = (path and path.hasMovePath) and 250 or 0
+                        self.amAnim[amN] = anim
+                        self.amWind[amN] = windup
+                        self.amSpeed[amN] = speed
+                        self.amAimed[amN] = ad.target
+                        self.amBusy[amN] = ad.endTime ~= nil and ad.endTime > now
+                    end
+                end
+            end
+        end
+    end
+    Trim(self.amU, amN, self.amHigh)
+    self.amHigh = amN
+    self.amN = amN
     local atkN = 0
     local keys, map = World.handleKeys, World.handleMap
     for i = 1, World.handleN do
