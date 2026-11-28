@@ -2,7 +2,7 @@ if _G.__LOWKEY_AKALI_LOADED then return end
 _G.__LOWKEY_AKALI_LOADED = true
 if myHero.charName ~= "Akali" then return end
 
-local VERSION = "1.3"
+local VERSION = "1.4"
 local SCRIPT_NAME = "Lowkey Akali"
 
 local PredTries = 0
@@ -149,18 +149,18 @@ Menu.shroud:MenuElement({ id = "count", name = "Enemies within 500 >=", value = 
 Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
 Menu.harass:MenuElement({ id = "useQ", name = "Use Q", value = true })
 Menu.harass:MenuElement({ id = "useE1", name = "Use E to poke", value = false })
-Menu.harass:MenuElement({ id = "energy", name = "Keep energy above", value = 55, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.harass:MenuElement({ id = "energyMin", name = "Keep energy above", value = 30, min = 0, max = 100, step = 5, identifier = "%" })
 
 Menu:MenuElement({ type = MENU, id = "clear", name = "Clear" })
 Menu.clear:MenuElement({ id = "useQ", name = "Use Q", value = true })
 Menu.clear:MenuElement({ id = "qMin", name = "Q if it kills >=", value = 2, min = 1, max = 6, step = 1 })
 Menu.clear:MenuElement({ id = "push", name = "Q to push when nothing is killable", value = false })
 Menu.clear:MenuElement({ id = "pushMin", name = "Pushing: units in the cone >=", value = 3, min = 1, max = 6, step = 1 })
-Menu.clear:MenuElement({ id = "energy", name = "Keep energy above", value = 45, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.clear:MenuElement({ id = "energyMin", name = "Keep energy above", value = 20, min = 0, max = 100, step = 5, identifier = "%" })
 
 Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last Hit" })
 Menu.lasthit:MenuElement({ id = "useQ", name = "Q a minion Q would kill", value = true })
-Menu.lasthit:MenuElement({ id = "energy", name = "Keep energy above", value = 40, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.lasthit:MenuElement({ id = "energyMin", name = "Keep energy above", value = 0, min = 0, max = 100, step = 5, identifier = "%" })
 
 Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
 Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
@@ -608,7 +608,7 @@ local function RunShroud()
 
     local near = NearCount(Q_RANGE2)
 
-    if S.energy <= Menu.shroud.energy:Value() then
+    if not S.qR and S.energy <= Menu.shroud.energy:Value() then
         if near > 0 or not Menu.shroud.energyNear:Value() then
             S.why = "shroud energy"
             return Send(HK_W, SW, S.x, S.z)
@@ -697,7 +697,7 @@ end
 
 local function RunHarass()
     local node = Menu.harass
-    if S.energy < node.energy:Value() then
+    if S.energy < node.energyMin:Value() then
         S.why = "energy"
         return
     end
@@ -803,7 +803,7 @@ end
 local function RunClear()
     local node = Menu.clear
     if not node.useQ:Value() then return end
-    if S.energy < node.energy:Value() then
+    if S.energy < node.energyMin:Value() then
         S.why = "energy"
         return
     end
@@ -831,7 +831,7 @@ end
 local function RunLastHit()
     local node = Menu.lasthit
     if not node.useQ:Value() then return end
-    if S.energy < node.energy:Value() then
+    if S.energy < node.energyMin:Value() then
         S.why = "energy"
         return
     end
