@@ -2,2570 +2,1358 @@ if _G.__LOWKEY_YASUO_LOADED then return end
 _G.__LOWKEY_YASUO_LOADED = true
 if myHero.charName ~= "Yasuo" then return end
 
-local F = {}
-
-local VERSION = "2.1"
+local VERSION = "1.9"
 local SCRIPT_NAME = "Lowkey Yasuo"
+
+local PredTries = 0
 
 local math_huge = math.huge
 local math_max = math.max
 local math_min = math.min
-local math_sqrt = math.sqrt
-local math_modf = math.modf
 local math_floor = math.floor
-local pcall = pcall
-local type = type
-local tonumber = tonumber
-local tostring = tostring
+local math_sqrt = math.sqrt
 local string_format = string.format
-local string_byte = string.byte
 local string_find = string.find
-local table_sort = table.sort
+local type = type
+local pcall = pcall
+local tostring = tostring
 
-local Game = _G.Game
-local Control = _G.Control
-local Draw = _G.Draw
+local Game = Game
+local myHero = myHero
 
 local GameTimer = Game.Timer
+local GameHeroCount = Game.HeroCount
+local GameHero = Game.Hero
 local GameCanUseSpell = Game.CanUseSpell
 local GameIsChatOpen = Game.IsChatOpen
-local GameLatency = Game.Latency
-local GameResolution = Game.Resolution
 local GameMissileCount = Game.MissileCount
 local GameMissile = Game.Missile
+
 local CastSpell = Control.CastSpell
+local SetCursorPos = Control.SetCursorPos
+local CursorBackX, CursorBackY = nil, nil
+local DrawCircle = Draw.Circle
+local DrawText = Draw.Text
+local DrawColor = Draw.Color
 
 local SQ, SW, SE, SR = _Q, _W, _E, _R
-local HKQ = HK_Q or 0
-local HKW = HK_W or 1
-local HKE = HK_E or 2
-local HKR = HK_R or 3
-local SUM_1 = SUMMONER_1 or 4
-local SUM_2 = SUMMONER_2 or 5
-local HK_SUM_1 = HK_SUMMONER_1 or 4
-local HK_SUM_2 = HK_SUMMONER_2 or 5
+local TEAM_ENEMY = 300 - myHero.team
 
-local TEAM_JUNGLE = 300
+local Q_RANGE, Q_RANGE2 = 475, 475 * 475
+local Q_RADIUS = 40
+local Q_DELAY_MAX, Q_DELAY_MIN, Q_AS_CAP = 0.40, 0.133, 0.67
+local Q_BASE = { 20, 45, 70, 95, 120 }
+local Q_AD = 1.05
 
-local DMG_PHYS = 0
-local DMG_MAGIC = 1
+local Q3_RANGE, Q3_RANGE2 = 1100, 1100 * 1100
+local Q3_RADIUS, Q3_SPEED = 90, 1200
+local Q_ARC2 = 230 * 230
+local FARM_SLACK = 20
 
-local INVULN_TYPE = 18
-local KNOCKUP_TYPE = 30
-local KNOCKBACK_TYPE = 31
+local E_RANGE, E_RANGE2 = 475, 475 * 475
+local E_BASE = { 60, 70, 80, 90, 100 }
+local E_AD, E_AP = 0.20, 0.60
+local EK = { ramp = 0.25, rampMax = 2, speed = 750, msShare = 0.90, dash = 475 }
+local BUFF_ERAMP = "yasuodashscalar"
 
-local KIT = {
-    qRange = 475,
-    qRadius = 40,
-    qSpeed = math_huge,
-    qDelayMax = 0.40,
-    qDelayMin = 0.133,
-    qASCap = 0.67,
-    qBase = { 20, 45, 70, 95, 120 },
-    qAD = 1.05,
-    qCircle = 230,
+local W_RANGE = 400
+local W_CAST = 0.25
+local MISSILE_PAD = 70
 
-    q3Range = 1100,
-    q3Radius = 90,
-    q3Speed = 1200,
+local R_RANGE, R_RANGE2 = 1400, 1400 * 1400
+local R_CLUSTER2 = 400 * 400
+local R_BASE = { 200, 350, 500 }
+local R_AD = 1.50
+local R_ARMOR_PEN = 0.50
 
-    eRange = 475,
-    eDash = 475,
-    eSpeed = 750,
-    eMsShare = 0.90,
-    eBase = { 60, 70, 80, 90, 100 },
-    eAD = 0.20,
-    eAP = 0.60,
-    eRamp = 0.25,
-    eRampMax = 2,
-
-    rRange = 1400,
-    rBase = { 200, 350, 500 },
-    rAD = 1.50,
-    rArmorPen = 0.50,
-
-    baseAS = 0.697,
-    critBonus = 0.675,
-    towerRange = 838.5,
-    igniteRange = 600,
-    wallProbe = 400,
-    wallPassFrac = 0.70,
-}
-
-local Q_RANGE2 = KIT.qRange * KIT.qRange
-local Q3_RANGE2 = KIT.q3Range * KIT.q3Range
-local QCIRCLE2 = KIT.qCircle * KIT.qCircle
-
-local F_ERAMP = 2
-local F_SHIELD = 4
-local F_KNOCK = 8
-local F_QSTACK = 16
-
-local BUFF_FLAG = {
-    yasuodashscalar = F_ERAMP,
-    yasuopassiveshield = F_SHIELD,
-    yasuoq3stacks = F_QSTACK,
-    yasuoq3mis = F_KNOCK,
-    yasuoq3 = F_KNOCK,
-    yasuorknockupcomboremove = F_KNOCK,
-    yasuorknockup = F_KNOCK,
-}
+local TURRET_RANGE2 = 915 * 915
 
 local Q3_WRAPPER = "YasuoQ3Wrapper"
+local BUFF_QSTACK = "yasuoq3stacks"
+local EMARKS = { "yasuoe", "yasuoedebuff", "yasuodashwrapper" }
+local KNOCK_TYPES = { [30] = true, [31] = true }
 
-local EMARK_NAMES = {
-    yasuoe = true,
-    yasuoedebuff = true,
-    yasuodashwrapper = true,
-}
+local SELF_CAST = {}
 
-local LIM = {
-    emarkPart = "_E_timer",
-    emarkOwner = "Yasuo",
-    emarkSlack = 40,
-    particleCap = 2048,
-    partMemoCap = 4000,
-    nameLogCap = 256,
-    selfPartSqr = 22500,
-    minionScan = 1200,
-    stateScan = KIT.rRange + 200,
-    nearScan = KIT.eRange + 125,
-    turretSqr = 4000000,
-    cellScale = 0.03030303,
-    cellSize = 33,
-    wjQuant = 64,
-    wjSpread = 160,
-}
+local COL_Q = DrawColor(150, 255, 160, 160)
+local COL_Q3 = DrawColor(230, 120, 220, 255)
+local COL_E = DrawColor(150, 140, 255, 180)
+local COL_R = DrawColor(120, 255, 90, 90)
+local COL_MARK = DrawColor(255, 255, 90, 90)
+local COL_FREE = DrawColor(255, 120, 255, 120)
+local COL_BG = DrawColor(180, 10, 10, 15)
+local COL_BORD = DrawColor(255, 200, 50, 50)
+local COL_RDY = DrawColor(255, 120, 255, 120)
+local COL_CD = DrawColor(255, 200, 200, 200)
+local COL_OFF = DrawColor(255, 130, 130, 130)
 
-local P_EMARK = 1
-local P_SHIELD = 2
-local P_QSTACK = 4
-local P_ERAMP = 8
-
-local SELF_PART = {
-    { "Passive_Shield", P_SHIELD },
-    { "_Q_stack", P_QSTACK },
-    { "_E_stack", P_ERAMP },
-}
-local SELF_PART_N = 3
-
-local DANGER = {
-    RocketGrab = 10,
-    ThreshQMissile = 10,
-    EnchantedCrystalArrow = 10,
-    MorganaQ = 10,
-    FizzR = 10,
-    VeigarR = 10,
-    SyndraR = 10,
-    UrgotR = 10,
-    NautilusAnchorDragMissile = 9,
-    SejuaniR = 9,
-    LuxLightBinding = 9,
-    AhriSeduce = 9,
-    EliseHumanE = 9,
-    BraumR = 9,
-    VarusR = 9,
-    PykeQRange = 9,
-    ZoeE = 9,
-    NautilusGrandLine = 9,
-    LeonaZenithBlade = 8,
-    NeekoE = 8,
-    IreliaR = 8,
-    LeblancE = 8,
-    LeblancRE = 8,
-    SylasE2 = 8,
-    BandageToss = 8,
-    BardQ = 8,
-    NamiRMissile = 8,
-    EzrealR = 8,
-    JinxR = 8,
-    DravenRCast = 8,
-    HeimerdingerEUlt = 8,
-    VayneCondemn = 8,
-    GoldCardPreAttack = 8,
-    BlindMonkQOne = 7,
-    IvernQ = 7,
-    HowlingGaleSpell = 7,
-    GravesChargeShot = 7,
-    FlashFrostSpell = 7,
-    GragasR = 7,
-    IllaoiE = 7,
-    SennaR = 7,
-    XerathMageSpear = 7,
-    ZyraE = 7,
-    AnnieQ = 7,
-    TristanaR = 7,
-    PoppyRSpell = 7,
-    YasuoQ3Mis = 7,
-    AatroxW = 7,
-    ApheliosR = 7,
-    ShyvanaFireballDragon2 = 7,
-    FioraW = 7,
-    NamiQ = 7,
-    SyndraE = 7,
-    CaitlynEntrapment = 6,
-    JayceShockBlastWallMis = 6,
-    KarmaQMantra = 6,
-    RengarE = 6,
-    SennaW = 6,
-    ZoeQMis2 = 6,
-    BrandQ = 6,
-    BraumQ = 6,
-    EkkoQ = 6,
-    JhinRShot = 6,
-    KledQ = 6,
-    JavelinToss = 6,
-    HeimerdingerE = 6,
-    AkaliE = 6,
-    DravenDoubleShot = 6,
-    CamilleE = 6,
-    FiddleSticksQ = 6,
-    BrandR = 6,
-    CaitlynPiltoverPeacemaker = 5,
-    JinxWMissile = 5,
-    KaisaW = 5,
-    AhriOrbofDeception = 5,
-    JayceShockBlast = 5,
-    KarmaQ = 5,
-    KennenShurikenHurlMissile1 = 5,
-    LissandraQMissile = 5,
-    ZedQ = 5,
-    ZoeQMissile = 5,
-    TalonW = 5,
-    GnarBigQMissile = 5,
-    PantheonQ = 5,
-    QuinnQ = 5,
-    RekSaiQBurrowed = 5,
-    ShyvanaFireball = 5,
-    SionE = 5,
-    SkarnerFractureMissile = 5,
-    TahmKenchQ = 5,
-    VarusQMissile = 5,
-    ViktorDeathRayMissile = 5,
-    LuluWTwo = 5,
-    MissileBarrageMissile2 = 5,
-    RedCardPreAttack = 5,
-    DianaQ = 5,
-    Frostbite = 5,
-    BlindingDart = 5,
-    ApheliosCalibrumQ = 5,
-    EzrealQ = 4,
-    SivirQ = 4,
-    Volley = 4,
-    GragasQ = 4,
-    LuluQ = 4,
-    NeekoQ = 4,
-    NocturneDuskbringer = 4,
-    OlafAxeThrowCast = 4,
-    RyzeQ = 4,
-    VeigarBalefulStrike = 4,
-    VelkozQ = 4,
-    KogMawVoidOozeMissile = 4,
-    GangplankQProceed = 4,
-    KayleQ = 4,
-    CassiopeiaE = 4,
-    PhosphorusBomb = 4,
-    MissileBarrageMissile = 4,
-    InfectedCleaverMissile = 4,
-    EliseHumanQ = 4,
-    EvelynnQ = 4,
-    GnarQMissile = 4,
-    NullLance = 4,
-    KalistaMysticShot = 4,
-    KhazixW = 4,
-    LeblancQ = 4,
-    SeismicShard = 4,
-    MaokaiQ = 4,
-    MissFortuneRicochetShot = 4,
-    RumbleGrenade = 4,
-    TaliyahQMis = 4,
-    WildCards = 4,
-    XayahQ = 4,
-    SowTheWind = 4,
-    GalioQ = 4,
-    GravesSmokeGrenade = 4,
-    EzrealW = 3,
-    NamiW = 3,
-    KatarinaQ = 3,
-    KogMawQ = 3,
-    LissandraEMissile = 3,
-    LucianW = 3,
-    RyzeE = 3,
-    TwoShivPoison = 3,
-    VelkozW = 3,
-    ZiggsQ = 3,
-    RakanQ = 3,
-    BlueCardPreAttack = 3,
-}
-
-local DANGER_NAMES = {}
-local DANGER_COUNT = 0
-for name in pairs(DANGER) do
-    DANGER_COUNT = DANGER_COUNT + 1
-    DANGER_NAMES[DANGER_COUNT] = name
-end
-table_sort(DANGER_NAMES)
-
-local MODE_NONE, MODE_COMBO, MODE_HARASS, MODE_CLEAR, MODE_LASTHIT, MODE_FLEE = 0, 1, 2, 3, 4, 5
+local PANEL_NAMES = { "Q", "W", "E", "R" }
 
 local TICK = 0
-local NOW = 0
 
 local S = {
-    myX = 0, myY = 0, myZ = 0,
-    hp = 1, maxHp = 1, hpPct = 1,
-    ms = 325, br = 65,
-    ad = 0, bonusAD = 0, ap = 0, crit = 0,
-    aaRange = 175,
-    qLv = 0, eLv = 0, rLv = 0,
-    qR = false, wR = false, eR = false, rR = false,
+    x = 0, y = 0, z = 0,
+    ad = 0, ap = 0,
+    hpPct = 100,
+    qLv = 0, wLv = 0, eLv = 0, rLv = 0,
     qCd = 0, wCd = 0, eCd = 0, rCd = 0,
-    qDelay = 0.40,
-    hasQ3 = false,
+    qR = false, wR = false, eR = false, rR = false,
+    qRaw = 0, eRaw = 0, rRaw = 0,
+    lat = 0.03, eStacks = 0, eDelay = 0.3,
+    penPct = 1, penBonus = 1, penFlat = 0, mpenPct = 1, mpenFlat = 0,
+    qDelay = Q_DELAY_MAX,
     qStacks = 0,
-    eRampStacks = 0,
-    shield = false,
-    flowPct = 0,
-    dashing = false,
+    hasQ3 = false,
     casting = false,
-    towerSqr = 0,
-    shieldPart = false,
-    qStackPart = 0,
-    eRampPart = 0,
-    mode = MODE_NONE,
-    lat = 0.03,
-    eDelay = 0.30,
-    nearE = 0,
-    nearA = 0,
+    mode = 0,
+    ti = 0,
+    knocked = 0,
+    why = "",
 }
 
-local EHo, EHx, EHz, EHd, EHbr = {}, {}, {}, {}, {}
-local EHh, EHhp, EHknock, EHmark, EHinvuln = {}, {}, {}, {}, {}
-local EHn, EHhigh = 0, 0
+local SentTick = {}
+local PendUntil = {}
+
+local EHo, EHx, EHz, EHd2 = {}, {}, {}, {}
+local EHhp, EHarm = {}, {}
+local EHmark, EHknock = {}, {}
+local EHn = 0
 
 local CMo, CMx, CMz, CMbr = {}, {}, {}, {}
-local CMpx, CMpz, CMps = {}, {}, {}
-local CMn, CMhigh = 0, 0
-
+local CMn = 0
 local JMo, JMx, JMz, JMbr = {}, {}, {}, {}
-local JMn, JMhigh = 0, 0
+local JMn = 0
 
-local EMX, EMZ = {}, {}
-local EMn = 0
+local EList, EListN = {}, 0
+local HeroSeen = -1
 
-local PartIsMark = {}
-local PartSeen = 0
-local PartNameSeen = {}
-local PartNameN = 0
+local EnemyHandles = {}
+local HandleTick = -1
+local WallX, WallZ, WallTick = 0, 0, -1
 
-local DUo, DUx, DUz, DUsafe, DUwall, DUhero = {}, {}, {}, {}, {}, {}
-local DUn, DUhigh = 0, 0
+local TurX, TurZ = {}, {}
+local TurN = 0
+local TurTick = -1
 
-local TTx, TTz = {}, {}
-local TTn = 0
-
-local MissileThreat = {}
-local MissileSeen = 0
-
-local MEMO = {
-    cx = nil, cz = nil, hit = false,
-    rank = {}, stamp = {},
-    missSeen = {}, missN = 0,
-}
-
-local PQs, PQx, PQz = {}, {}, {}
-local P3s, P3x, P3z = {}, {}, {}
-local DMs, DMv = {}, {}
-
-local MapPos = nil
-local tsTick = -1
-local tsIdx = 0
-
-local qHeld = false
-local attackOn = nil
-local dumpHeld = false
-local wjDraw = false
-local seenBuff = {}
-local seenBuffN = 0
-local cursorBackX, cursorBackY = nil, nil
-
+local PredQ, PredQ3 = nil, nil
 local Pos = { x = 0, y = 0, z = 0 }
-local PendUntil = {}
-local SentTick = {}
 
-local Menu = MenuElement({ type = MENU, id = "LowkeyYasuo", name = "Lowkey Yasuo" })
-Menu:MenuElement({ name = " ", drop = { "The Wind Samurai v" .. VERSION } })
-
-Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
-Menu.combo:MenuElement({ id = "useQ", name = "Use Q1/Q2", value = true })
-Menu.combo:MenuElement({ id = "useQ3", name = "Use Q3", value = true })
-Menu.combo:MenuElement({ id = "useE", name = "Use E", value = true })
-Menu.combo:MenuElement({ id = "eMode", name = "E logic", value = 3, drop = { "Towards target", "Towards cursor", "Smart" } })
-Menu.combo:MenuElement({ id = "eGapRange", name = "E gap close range", value = 900, min = 475, max = 1800, step = 25 })
-Menu.combo:MenuElement({ id = "noETower", name = "Do not E into tower", value = true })
-Menu.combo:MenuElement({ id = "qInDash", name = "Q while dashing", value = true })
-Menu.combo:MenuElement({ id = "eEngage", name = "E engage through minions", value = true })
-Menu.combo:MenuElement({ id = "stackQ", name = "Stack Q on minions with no target", value = true })
-Menu.combo:MenuElement({ id = "eMarkBySource", name = "E mark fallback: any buff of mine", value = false })
-
-Menu.combo:MenuElement({ type = MENU, id = "ign", name = "F.Ignite" })
-Menu.combo.ign:MenuElement({ id = "use", name = "Use ignite", value = true })
-Menu.combo.ign:MenuElement({ id = "mode", name = "Mode", value = 2, drop = { "Kill steal only", "In fight if killable" } })
-
-Menu.combo:MenuElement({ type = MENU, id = "trade", name = "Trade optimizer" })
-Menu.combo.trade:MenuElement({ id = "enable", name = "Enable", value = true })
-Menu.combo.trade:MenuElement({ id = "shield", name = "Prefer trading with flow shield", value = true })
-Menu.combo.trade:MenuElement({ id = "flowPct", name = "Min flow% to engage", value = 80, min = 0, max = 100, step = 5, identifier = "%" })
-Menu.combo.trade:MenuElement({ id = "antiGank", name = "Limit E if outnumbered", value = true })
-
-Menu:MenuElement({ type = MENU, id = "ult", name = "Ultimate" })
-Menu.ult:MenuElement({ id = "team", name = "R on airborne", value = true })
-Menu.ult:MenuElement({ id = "teamMin", name = "Min enemies airborne", value = 2, min = 1, max = 5 })
-Menu.ult:MenuElement({ id = "airblade", name = "F.Airblade: E towards airborne then R", value = true })
-Menu.ult:MenuElement({ id = "noRDash", name = "Do not R while dashing", value = true })
-
-Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
-Menu.harass:MenuElement({ id = "useQ", name = "Use Q1/Q2", value = true })
-Menu.harass:MenuElement({ id = "useQ3", name = "Use Q3", value = true })
-Menu.harass:MenuElement({ id = "stackQ", name = "Stack Q on minions", value = true })
-
-Menu:MenuElement({ type = MENU, id = "clear", name = "Lane and jungle clear" })
-Menu.clear:MenuElement({ id = "useQ", name = "Use Q1/Q2", value = true })
-Menu.clear:MenuElement({ id = "useQ3", name = "Use Q3", value = true })
-Menu.clear:MenuElement({ id = "q3Min", name = "Min minions for Q3", value = 3, min = 1, max = 7 })
-Menu.clear:MenuElement({ id = "useE", name = "Use E", value = true })
-Menu.clear:MenuElement({ id = "eLH", name = "E logic", value = 1, drop = { "Last hit only", "Always" } })
-Menu.clear:MenuElement({ id = "noETower", name = "Do not E into tower", value = true })
-
-Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last hit" })
-Menu.lasthit:MenuElement({ id = "useQ", name = "Use Q1/Q2", value = true })
-Menu.lasthit:MenuElement({ id = "useE", name = "Use E", value = true })
-Menu.lasthit:MenuElement({ id = "noETower", name = "Do not E into tower", value = true })
-
-Menu:MenuElement({ type = MENU, id = "flee", name = "Flee" })
-Menu.flee:MenuElement({ id = "useE", name = "Use E to flee", value = true })
-Menu.flee:MenuElement({ id = "noETower", name = "Do not E into tower", value = true })
-Menu.flee:MenuElement({ id = "useQ3", name = "Use Q3 while fleeing", value = true })
-Menu.flee:MenuElement({ id = "useQ", name = "Use Q1/Q2 while fleeing", value = true })
-
-Menu:MenuElement({ type = MENU, id = "walljump", name = "Wall jump" })
-Menu.walljump:MenuElement({ id = "key", name = "Wall jump key", key = string_byte("Z") })
-Menu.walljump:MenuElement({ id = "range", name = "Cursor search radius", value = 350, min = 100, max = 900, step = 25 })
-Menu.walljump:MenuElement({ id = "push", name = "Allow push through wall", value = true })
-Menu.walljump:MenuElement({ id = "draw", name = "Show wall jump indicator", value = true })
-
-Menu:MenuElement({ type = MENU, id = "windwall", name = "Wind wall" })
-Menu.windwall:MenuElement({ id = "enable", name = "Auto wind wall", value = true })
-Menu.windwall:MenuElement({ id = "onlyCombo", name = "Only in combo", value = false })
-Menu.windwall:MenuElement({ id = "minThreat", name = "Min threat to block", value = 5, min = 1, max = 10 })
-Menu.windwall:MenuElement({ id = "hpSafe", name = "Always block below HP%", value = 40, min = 5, max = 100, step = 5, identifier = "%" })
-Menu.windwall:MenuElement({ type = MENU, id = "spells", name = "Spells to block" })
-for i = 1, DANGER_COUNT do
-    local nm = DANGER_NAMES[i]
-    Menu.windwall.spells:MenuElement({ id = nm, name = nm, value = true })
-end
+local Menu = MenuElement({ type = MENU, id = "LowkeyYasuo", name = SCRIPT_NAME .. " v" .. VERSION })
+Menu:MenuElement({ name = "info", drop = { "Steel Tempest and Sweeping Blade" } })
 
 Menu:MenuElement({ type = MENU, id = "pred", name = "Prediction" })
-Menu.pred:MenuElement({ name = " ", drop = { "Engine: GGPrediction" } })
-Menu.pred:MenuElement({ id = "hcQ", name = "Hitchance Q", value = 1, drop = { "Normal", "High", "Immobile" } })
-Menu.pred:MenuElement({ id = "hcQ3", name = "Hitchance Q3", value = 2, drop = { "Normal", "High", "Immobile" } })
+Menu.pred:MenuElement({ id = "qHit", name = "Q Hit Chance", value = 1, drop = { "Normal", "High", "Immobile" } })
+Menu.pred:MenuElement({ id = "q3Hit", name = "Q3 Hit Chance", value = 2, drop = { "Normal", "High", "Immobile" } })
+
+Menu:MenuElement({ type = MENU, id = "combo", name = "Combo" })
+Menu.combo:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.combo:MenuElement({ id = "useQ3", name = "Use Q3 tornado", value = true })
+Menu.combo:MenuElement({ id = "q3Only", name = "Hold Q3 for a target in range", value = true })
+Menu.combo:MenuElement({ id = "useE", name = "Use E", value = true })
+Menu.combo:MenuElement({ id = "eQ", name = "Q right after an E dash", value = true })
+Menu.combo:MenuElement({ id = "gap", name = "E through minions to reach the target", value = true })
+Menu.combo:MenuElement({ id = "gapGain", name = "Only if the dash closes at least", value = 150, min = 50, max = 400, step = 25 })
+Menu.combo:MenuElement({ id = "gapMax", name = "Give up beyond", value = 1600, min = 600, max = 2500, step = 100 })
+
+Menu:MenuElement({ type = MENU, id = "dash", name = "E Dashing" })
+Menu.dash:MenuElement({ id = "minRange", name = "Only E beyond", value = 0, min = 0, max = 475, step = 25 })
+Menu.dash:MenuElement({ id = "turretRule", name = "Into enemy turret", value = 2, drop = { "Never", "Smart", "Always" } })
+Menu.dash:MenuElement({ id = "diveHP", name = "Smart: target HP% below", value = 40, min = 5, max = 100, step = 5, identifier = "%" })
+Menu.dash:MenuElement({ id = "diveMine", name = "Smart: my HP% above", value = 50, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.dash:MenuElement({ id = "crowd", name = "Skip if enemies at landing >=", value = 3, min = 1, max = 5, step = 1 })
+Menu.dash:MenuElement({ id = "particles", name = "Read the E mark from particles", value = true })
+
+Menu:MenuElement({ type = MENU, id = "wall", name = "W Wind Wall" })
+Menu.wall:MenuElement({ id = "key", name = "Cast toward cursor", key = string.byte("G") })
+Menu.wall:MenuElement({ id = "auto", name = "Block incoming skillshots", value = true })
+Menu.wall:MenuElement({ id = "attacks", name = "Also block basic attacks", value = false })
+Menu.wall:MenuElement({ id = "window", name = "React when impact within", value = 0.5, min = 0.2, max = 1.2, step = 0.05 })
+Menu.wall:MenuElement({ id = "pad", name = "Extra hit radius", value = 30, min = 0, max = 150, step = 10 })
+
+Menu:MenuElement({ type = MENU, id = "ult", name = "R Last Breath" })
+Menu.ult:MenuElement({ id = "use", name = "Use R on knocked up", value = true })
+Menu.ult:MenuElement({ id = "count", name = "Only if knocked up >=", value = 1, min = 1, max = 5, step = 1 })
+
+Menu:MenuElement({ type = MENU, id = "flee", name = "Flee" })
+Menu.flee:MenuElement({ id = "useE", name = "E toward the cursor", value = true })
+Menu.flee:MenuElement({ id = "heroes", name = "Also dash through enemies", value = false })
+Menu.flee:MenuElement({ id = "noTurret", name = "Never land under a turret", value = true })
+
+Menu:MenuElement({ type = MENU, id = "harass", name = "Harass" })
+Menu.harass:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.harass:MenuElement({ id = "q3Only", name = "Only the Q3 tornado", value = true })
+
+Menu.harass:MenuElement({ id = "stackQ", name = "Stack Q on minions", value = true })
+
+Menu:MenuElement({ type = MENU, id = "clear", name = "Clear" })
+Menu.clear:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.clear:MenuElement({ id = "useQ3", name = "Use Q3 tornado", value = true })
+Menu.clear:MenuElement({ id = "q3Min", name = "Q3 on lane minions, hit at least", value = 2, min = 1, max = 6, step = 1 })
+Menu.clear:MenuElement({ id = "eMode", name = "Use E", value = 3, drop = { "Never", "Any target in range", "Only to last hit" } })
+
+Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last Hit" })
+Menu.lasthit:MenuElement({ id = "useQ", name = "Use Q", value = true })
+Menu.lasthit:MenuElement({ id = "useE", name = "Use E", value = true })
+
+Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
+Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
+Menu.ks:MenuElement({ id = "useR", name = "R killsteal", value = false })
 
 Menu:MenuElement({ type = MENU, id = "debug", name = "Debug" })
-Menu.debug:MenuElement({ id = "watch", name = "Print each new buff name once", value = false })
-Menu.debug:MenuElement({ id = "dumpKey", name = "Dump every buff now", key = string_byte("J") })
-Menu.debug:MenuElement({ id = "particles", name = "Also dump particles near units", value = false })
-Menu.debug:MenuElement({ id = "partNames", name = "Log new particle names with Yasuo", value = false })
-Menu.debug:MenuElement({ id = "missNames", name = "Log unknown enemy missile names", value = false })
+Menu.debug:MenuElement({ id = "trace", name = "Log every cast to yasuo.log", value = false })
 
 Menu:MenuElement({ type = MENU, id = "draw", name = "Drawings" })
 Menu.draw:MenuElement({ id = "enable", name = "Enable drawings", value = true })
-Menu.draw:MenuElement({ id = "qRange", name = "Q range", value = true })
-Menu.draw:MenuElement({ id = "q3Range", name = "Q3 range", value = true })
-Menu.draw:MenuElement({ id = "eRange", name = "E range", value = true })
-Menu.draw:MenuElement({ id = "eGap", name = "E gap close range", value = false })
-Menu.draw:MenuElement({ id = "rRange", name = "R range", value = false })
-Menu.draw:MenuElement({ id = "killable", name = "Kill indicator", value = true })
-Menu.draw:MenuElement({ id = "flow", name = "Flow shield status", value = true })
-Menu.draw:MenuElement({ id = "qStacks", name = "Q stacks", value = true })
-Menu.draw:MenuElement({ id = "eDashPos", name = "E dash positions", value = true })
 Menu.draw:MenuElement({ id = "panel", name = "Status panel", value = true })
+Menu.draw:MenuElement({ id = "qRange", name = "Q range", value = true })
+Menu.draw:MenuElement({ id = "eRange", name = "E range", value = true })
+Menu.draw:MenuElement({ id = "rRange", name = "R range", value = false })
+Menu.draw:MenuElement({ id = "marks", name = "Mark dashable enemies", value = true })
+Menu.draw:MenuElement({ id = "wall", name = "Mark the missile W would block", value = true })
 
-function F.DistSqr(ax, az, bx, bz)
-    local dx, dz = ax - bx, az - bz
-    return dx * dx + dz * dz
+local function PhysMul(armor, pen)
+    local v = armor or 0
+    if pen and pen > 0 then v = v * (1 - pen) end
+    v = v * S.penPct * S.penBonus - S.penFlat
+    if v >= 0 then return 100 / (100 + v) end
+    return 2 - 100 / (100 - v)
 end
 
-function F.Whole(v)
-    if type(v) ~= "number" or v ~= v or v < -32000 or v > 32000 then return nil end
-    return math_floor(v)
+local function MagicMul(mr)
+    local v = (mr or 0) * S.mpenPct - S.mpenFlat
+    if v >= 0 then return 100 / (100 + v) end
+    return 2 - 100 / (100 - v)
 end
 
-function F.Warp(x, y)
-    local wx, wy = F.Whole(x), F.Whole(y)
-    if wx == nil or wy == nil then return false end
-    Control.SetCursorPos(wx, wy)
-    return true
+local function IsValidUnit(obj)
+    return obj ~= nil and obj.valid and obj.visible and obj.isTargetable
+        and not obj.dead and not obj.isImmortal and obj.health > 0
 end
 
-function F.SaveCursor()
-    if cursorBackX then return end
-    local cp = _G.cursorPos
-    if cp == nil then return end
-    local bx, by = F.Whole(cp.x), F.Whole(cp.y)
-    if bx == nil or by == nil then return end
-    cursorBackX, cursorBackY = bx, by
-end
+local BuffSrc = nil
+local BuffApi = nil
 
-function F.RestoreCursor()
-    if cursorBackX == nil then return end
-    local bx, by = cursorBackX, cursorBackY
-    cursorBackX, cursorBackY = nil, nil
-    F.Warp(bx, by)
-end
-
-function F.MouseXZ()
-    local mp = _G.mousePos
-    if mp == nil then mp = Game.mousePos end
-    if mp == nil then return nil, nil end
-    local x, z = mp.x, mp.z
-    if type(x) ~= "number" or type(z) ~= "number" then return nil, nil end
-    return x, z
-end
-
-function F.AckWindow()
-    return S.lat * 4 + 0.30
-end
-
-function F.SlotFree(slot)
-    local deadline = PendUntil[slot]
-    if deadline == nil then return true end
-    if GameCanUseSpell(slot) ~= 0 then
-        PendUntil[slot] = nil
-        return true
+local function BuffMapOf(unit)
+    if BuffSrc == nil then
+        local sdk = _G.SDK
+        local c = sdk and sdk.Cached
+        BuffSrc = (c and c.GetBuffMap and c) or false
     end
-    if NOW >= deadline then
-        PendUntil[slot] = nil
-        return true
+    if not BuffSrc then return nil end
+    return BuffSrc:GetBuffMap(unit)
+end
+
+local PT = {
+    x = {}, z = {}, n = 0, memo = {}, seen = 0, frame = -1,
+    owner = "Yasuo", mark = "_E_timer", slack = 40, cap = 2048, wipe = 4000,
+}
+
+local function ScanParticles()
+    if PT.frame == TICK then return end
+    PT.frame = TICK
+    PT.n = 0
+    if not S.eR then return end
+    local count, at = Game.ParticleCount, Game.Particle
+    if type(count) ~= "function" or type(at) ~= "function" then return end
+    local total = count()
+    if type(total) ~= "number" or total <= 0 then return end
+    if total > PT.cap then total = PT.cap end
+    if PT.seen > PT.wipe then
+        PT.memo = {}
+        PT.seen = 0
     end
-    return false
-end
-
-function F.MarkSent(slot)
-    PendUntil[slot] = NOW + F.AckWindow()
-    SentTick[slot] = TICK
-end
-
-function F.SendAt(hk, slot, x, z)
-    if type(x) ~= "number" or x ~= x then return false end
-    if type(z) ~= "number" or z ~= z then return false end
-    if not F.SlotFree(slot) then return false end
-    Pos.x, Pos.y, Pos.z = x, S.myY, z
-    F.SaveCursor()
-    if CastSpell(hk, Pos) == false then
-        F.RestoreCursor()
-        return false
-    end
-    F.MarkSent(slot)
-    return true
-end
-
-function F.SendAtUnit(hk, slot, unit)
-    if unit == nil then return false end
-    local p2 = unit.pos2D
-    if p2 == nil or p2.onScreen ~= true then return false end
-    local p = unit.pos
-    if p == nil then return false end
-    if not F.SlotFree(slot) then return false end
-    F.SaveCursor()
-    if CastSpell(hk, p) == false then
-        F.RestoreCursor()
-        return false
-    end
-    F.MarkSent(slot)
-    return true
-end
-
-function F.SafeCd(sd)
-    local v = sd and sd.currentCd
-    if type(v) ~= "number" or v ~= v or v < 0 or v > 1000 then return 0 end
-    return v
-end
-
-local CdTotal = {}
-local CdStart = {}
-local CdBusy = {}
-
-function F.CdSane(x)
-    return type(x) == "number" and x == x and x >= 0 and x <= 1000
-end
-
-function F.PanelCd(sd, slot)
-    local key = sd and sd.name
-    if key == nil then return 0 end
-
-    local total = sd.cd
-    if F.CdSane(total) and total > 0 then CdTotal[key] = total end
-
-    if GameCanUseSpell(slot) == 0 then
-        if CdBusy[key] then
-            local started = CdStart[key]
-            if started and NOW > started then CdTotal[key] = NOW - started end
-            CdBusy[key] = false
+    local memo, xs, zs = PT.memo, PT.x, PT.z
+    local n = 0
+    for i = 1, total do
+        local part = at(i)
+        if part then
+            local id = part.networkID
+            local hit = memo[id]
+            if hit == nil then
+                local nm = part.name
+                hit = type(nm) == "string"
+                    and string_find(nm, PT.owner, 1, true) ~= nil
+                    and string_find(nm, PT.mark, 1, true) ~= nil
+                memo[id] = hit
+                PT.seen = PT.seen + 1
+            end
+            if hit then
+                local pos = part.pos
+                if pos then
+                    n = n + 1
+                    xs[n], zs[n] = pos.x, pos.z
+                end
+            end
         end
-        return 0
     end
+    PT.n = n
+end
 
-    if not CdBusy[key] then
-        CdBusy[key] = true
-        CdStart[key] = NOW
+local function MarkedByParticle(ux, uz, br)
+    if PT.n == 0 then return false end
+    local reach = (br or 60) + PT.slack
+    local r2 = reach * reach
+    local xs, zs = PT.x, PT.z
+    for i = 1, PT.n do
+        local dx, dz = ux - xs[i], uz - zs[i]
+        if dx * dx + dz * dz <= r2 then return true end
     end
-
-    local cur = sd.currentCd
-    if F.CdSane(cur) then return cur end
-
-    local t, s = CdTotal[key], CdStart[key]
-    if t == nil or s == nil then return 0 end
-    local left = s + t - NOW
-    if left <= 0 then return 0 end
-    return left
-end
-
-function F.IsValid(unit)
-    if unit == nil or not unit.valid or not unit.visible then return false end
-    if unit.dead or not unit.isTargetable then return false end
-    local hp = unit.health
-    return hp ~= nil and hp > 0
-end
-
-function F.IsValidUnit(unit)
-    if unit == nil or not unit.valid or unit.dead then return false end
-    if not unit.isTargetable then return false end
-    local hp = unit.health
-    return hp ~= nil and hp > 0
-end
-
-function F.ShouldWait()
-    if myHero.dead or GameIsChatOpen() then return true end
-    local je = _G.JustEvade
-    if je and je.Evading and je:Evading() then return true end
-    local ee = _G.ExtLibEvade
-    if ee and ee.Evading then return true end
     return false
 end
 
-function F.OrbMode()
+local function Marked(unit)
+    local pos = Menu.dash.particles:Value() and unit.pos
+    if pos then
+        ScanParticles()
+        if MarkedByParticle(pos.x, pos.z, unit.boundingRadius) then return true end
+    end
+    local map = BuffMapOf(unit)
+    if not map then return false end
+    for m = 1, 3 do
+        if map[EMARKS[m]] then return true end
+    end
+    return false
+end
+
+local function HasKnock(unit)
+    if BuffApi == nil then
+        local sdk = _G.SDK
+        local b = sdk and sdk.BuffManager
+        if not (b and b.HasBuffTypes) then
+            BuffApi = false
+            return false
+        end
+        local ok, r = pcall(b.HasBuffTypes, b, unit, KNOCK_TYPES)
+        if not ok then
+            BuffApi = false
+            return false
+        end
+        BuffApi = b
+        return r == true
+    end
+    if not BuffApi then return false end
+    return BuffApi:HasBuffTypes(unit, KNOCK_TYPES) == true
+end
+
+local function OrbMode()
     local sdk = _G.SDK
-    if not sdk or not sdk.Orbwalker or not sdk.Orbwalker.Modes then return MODE_NONE end
+    if not sdk or not sdk.Orbwalker or not sdk.Orbwalker.Modes then return 0 end
     local m = sdk.Orbwalker.Modes
-    if m[sdk.ORBWALKER_MODE_COMBO] then return MODE_COMBO end
-    if m[sdk.ORBWALKER_MODE_HARASS] then return MODE_HARASS end
-    if m[sdk.ORBWALKER_MODE_LANECLEAR] then return MODE_CLEAR end
-    if m[sdk.ORBWALKER_MODE_JUNGLECLEAR] then return MODE_CLEAR end
-    if m[sdk.ORBWALKER_MODE_LASTHIT] then return MODE_LASTHIT end
-    if m[sdk.ORBWALKER_MODE_FLEE] then return MODE_FLEE end
-    return MODE_NONE
-end
-
-function F.CanMove()
-    local sdk = _G.SDK
-    local ow = sdk and sdk.Orbwalker
-    if ow and ow.CanMove then return ow:CanMove(myHero) ~= false end
-    return true
-end
-
-function F.AllowAttack(on)
-    if attackOn == on then return end
-    local sdk = _G.SDK
-    local ow = sdk and sdk.Orbwalker
-    if ow and ow.SetAttack then ow:SetAttack(on) end
-    attackOn = on
-end
-
-function F.IsCasting()
-    local cast = myHero.activeSpell
-    if cast == nil or cast.valid ~= true then return false end
-    local a, b = cast.startTime, cast.castEndTime
-    if type(a) ~= "number" or type(b) ~= "number" then return false end
-    return NOW >= a and NOW <= b
-end
-
-function F.Mitigate(target, kind, raw)
-    if raw <= 0 then return 0 end
-    local sdk = _G.SDK
-    local dmg = sdk and sdk.Damage
-    if dmg and dmg.CalculateDamage then
-        local ok, v = pcall(dmg.CalculateDamage, dmg, myHero, target, kind, raw)
-        if ok and type(v) == "number" then return v end
-    end
-    local res = (kind == DMG_PHYS and target.armor or target.magicResist) or 0
-    if res >= 0 then return raw * 100 / (100 + res) end
-    return raw * (2 - 100 / (100 - res))
-end
-
-function F.MitigatePen(target, raw, pen)
-    if raw <= 0 then return 0 end
-    local res = (target.armor or 0) * (1 - pen)
-    if res >= 0 then return raw * 100 / (100 + res) end
-    return raw * (2 - 100 / (100 - res))
-end
-
-function F.HasFlag(flags, flag)
-    return flags % (flag * 2) >= flag
-end
-
-function F.BuffList(unit)
-    local sdk = _G.SDK
-    local c = sdk and sdk.Cached
-    if c and c.GetBuffs then
-        local ok, list = pcall(c.GetBuffs, c, unit)
-        if ok and type(list) == "table" then return list end
-    end
-    return nil
-end
-
-function F.Lower(s)
-    if type(s) ~= "string" then return nil end
-    return s:lower()
-end
-
-function F.ScanUnit(unit)
-    local knock, invuln, flags, ramp, qst = false, false, 0, 0, 0
-    local buffs = F.BuffList(unit)
-    if buffs then
-        for i = 1, #buffs do
-            local b = buffs[i]
-            local t = b.type
-            if t == KNOCKUP_TYPE or t == KNOCKBACK_TYPE then
-                knock = true
-            elseif t == INVULN_TYPE then
-                invuln = true
-            end
-            local f = BUFF_FLAG[F.Lower(b.name)]
-            if f then
-                local c = tonumber(b.count) or 0
-                if c > 0 then
-                    if f == F_KNOCK then
-                        knock = true
-                    elseif f == F_ERAMP then
-                        ramp = c
-                    elseif f == F_QSTACK then
-                        qst = c
-                    else
-                        flags = flags + f
-                    end
-                end
-            end
-        end
-        return knock, invuln, flags, ramp, qst
-    end
-    local total = unit.buffCount
-    if type(total) ~= "number" then return knock, invuln, flags, ramp, qst end
-    for i = 0, total - 1 do
-        local b = unit:GetBuff(i)
-        if b then
-            local c = tonumber(b.count) or 0
-            if c > 0 then
-                local t = b.type
-                if t == KNOCKUP_TYPE or t == KNOCKBACK_TYPE then
-                    knock = true
-                elseif t == INVULN_TYPE then
-                    invuln = true
-                end
-                local f = BUFF_FLAG[F.Lower(b.name)]
-                if f then
-                    if f == F_KNOCK then
-                        knock = true
-                    elseif f == F_ERAMP then
-                        ramp = c
-                    elseif f == F_QSTACK then
-                        qst = c
-                    else
-                        flags = flags + f
-                    end
-                end
-            end
-        end
-    end
-    return knock, invuln, flags, ramp, qst
-end
-
-function F.SourceIsMine(b)
-    local nid = b.sourcenID
-    if nid ~= nil and nid == myHero.networkID then return true end
-    local nm = b.sourceName
-    if type(nm) == "string" and nm ~= "" and nm == myHero.charName then return true end
-    return false
-end
-
-function F.AnyDashable()
-    local base = KIT.eRange
-    local mx, mz = S.myX, S.myZ
-    for i = 1, CMn do
-        local r = base + CMbr[i]
-        if F.DistSqr(CMx[i], CMz[i], mx, mz) <= r * r then return true end
-    end
-    for i = 1, JMn do
-        local r = base + JMbr[i]
-        if F.DistSqr(JMx[i], JMz[i], mx, mz) <= r * r then return true end
-    end
-    for i = 1, EHn do
-        local r = base + EHbr[i]
-        if F.DistSqr(EHx[i], EHz[i], mx, mz) <= r * r then return true end
-    end
-    return false
-end
-
-function F.PartOwnerLabel(px, pz)
-    for k = 1, EHn do
-        if F.DistSqr(px, pz, EHx[k], EHz[k]) <= 160000 then
-            return EHo[k].charName or "hero"
-        end
-    end
-    for k = 1, CMn do
-        if F.DistSqr(px, pz, CMx[k], CMz[k]) <= 40000 then return "minion" end
-    end
-    for k = 1, JMn do
-        if F.DistSqr(px, pz, JMx[k], JMz[k]) <= 40000 then return "monster" end
-    end
-    if F.DistSqr(px, pz, S.myX, S.myZ) <= LIM.selfPartSqr then return "MYSELF" end
-    return nil
-end
-
-function F.ClassifyParticle(nm)
-    if nm == nil then return 0 end
-    if string_find(nm, LIM.emarkOwner, 1, true) == nil then return 0 end
-    if string_find(nm, LIM.emarkPart, 1, true) ~= nil then return P_EMARK end
-    for i = 1, SELF_PART_N do
-        local e = SELF_PART[i]
-        if string_find(nm, e[1], 1, true) ~= nil then return e[2] end
-    end
+    if m[sdk.ORBWALKER_MODE_COMBO] then return 1 end
+    if m[sdk.ORBWALKER_MODE_HARASS] then return 2 end
+    if m[sdk.ORBWALKER_MODE_LANECLEAR] then return 3 end
+    if m[sdk.ORBWALKER_MODE_JUNGLECLEAR] then return 3 end
+    if m[sdk.ORBWALKER_MODE_LASTHIT] then return 4 end
+    if m[sdk.ORBWALKER_MODE_FLEE] then return 5 end
     return 0
 end
 
-function F.ScanParticles()
-    EMn = 0
-    local mode = S.mode
-    local needSelf = mode == MODE_COMBO or mode == MODE_HARASS
-    local needMark = S.eR and F.AnyDashable()
-    local needNames = Menu.debug.partNames:Value() == true
-    if needSelf then
-        S.shieldPart = false
-        S.qStackPart = 0
-        S.eRampPart = 0
+local function InitPred()
+    if PredQ then return end
+    local gg = _G.GGPrediction
+    if not gg then
+        PredTries = PredTries + 1
+        if PredTries == 300 then
+            print("[" .. SCRIPT_NAME .. "] GGPrediction unavailable, casting without prediction")
+        end
+        return
     end
-    if not needMark and not needSelf and not needNames then return end
-    if type(Game.ParticleCount) ~= "function" or type(Game.Particle) ~= "function" then return end
-    local total = Game.ParticleCount()
-    if type(total) ~= "number" or total <= 0 then return end
-    local cap = LIM.particleCap
-    if total > cap then total = cap end
-    if PartSeen > LIM.partMemoCap then
-        PartIsMark = {}
-        PartSeen = 0
+    if PredTries > 0 then
+        print("[" .. SCRIPT_NAME .. "] prediction ready after " .. PredTries .. " ticks")
     end
-    local n = 0
-    local mx, mz = S.myX, S.myZ
-    local selfSqr = LIM.selfPartSqr
-    for i = 1, total do
-        local p = Game.Particle(i)
-        if p then
-            local id = p.networkID
-            local code
-            if id ~= nil then code = PartIsMark[id] end
-            if code == nil then
-                local nm = p.name
-                code = F.ClassifyParticle(nm)
-                if id ~= nil then
-                    PartIsMark[id] = code
-                    PartSeen = PartSeen + 1
-                end
-                if needNames and nm ~= nil and PartNameSeen[nm] == nil
-                    and string_find(nm, LIM.emarkOwner, 1, true) ~= nil then
-                    if PartNameN > LIM.nameLogCap then
-                        PartNameSeen = {}
-                        PartNameN = 0
-                    end
-                    PartNameSeen[nm] = true
-                    PartNameN = PartNameN + 1
-                    local pos = p.pos
-                    print(string_format("[%s] PNAME %q code=%d on=%s", SCRIPT_NAME, nm, code,
-                        (pos and F.PartOwnerLabel(pos.x, pos.z)) or "far"))
-                end
-            end
-            if code == P_EMARK then
-                if needMark then
-                    local pos = p.pos
-                    if pos then
-                        n = n + 1
-                        EMX[n], EMZ[n] = pos.x, pos.z
-                    end
-                end
-            elseif code ~= 0 and needSelf then
-                local pos = p.pos
-                if pos and F.DistSqr(pos.x, pos.z, mx, mz) <= selfSqr then
-                    if code == P_SHIELD then
-                        S.shieldPart = true
-                    elseif code == P_QSTACK then
-                        S.qStackPart = S.qStackPart + 1
-                    else
-                        S.eRampPart = S.eRampPart + 1
-                    end
-                end
-            end
+    PredQ = gg:SpellPrediction({
+        Type = gg.SPELLTYPE_LINE, Delay = Q_DELAY_MAX, Radius = Q_RADIUS,
+        Range = Q_RANGE, Speed = math_huge, Collision = false,
+    })
+    PredQ3 = gg:SpellPrediction({
+        Type = gg.SPELLTYPE_LINE, Delay = Q_DELAY_MAX, Radius = Q3_RADIUS,
+        Range = Q3_RANGE, Speed = Q3_SPEED, Collision = false,
+    })
+end
+
+local function HitOf(v)
+    local gg = _G.GGPrediction
+    if not gg then return 0 end
+    if v == 3 then return gg.HITCHANCE_IMMOBILE end
+    if v == 2 then return gg.HITCHANCE_HIGH end
+    return gg.HITCHANCE_NORMAL
+end
+
+local function BuildLists()
+    local n = GameHeroCount()
+    if n == HeroSeen then return end
+    HeroSeen = n
+    EListN = 0
+    for i = 1, n do
+        local h = GameHero(i)
+        if h and h.team == TEAM_ENEMY then
+            EListN = EListN + 1
+            EList[EListN] = h
         end
     end
-    EMn = n
-    if not needSelf then return end
-    if S.shieldPart then S.shield = true end
-    if S.qStackPart > 0 and S.qStacks == 0 then S.qStacks = S.qStackPart end
-    if S.eRampPart > 0 and S.eRampStacks == 0 then
-        S.eRampStacks = math_min(S.eRampPart, KIT.eRampMax)
-    end
 end
 
-function F.MarkedByParticle(ux, uz, br)
-    if EMn == 0 then return false end
-    local reach = br + LIM.emarkSlack
-    local rs = reach * reach
-    for i = 1, EMn do
-        if F.DistSqr(ux, uz, EMX[i], EMZ[i]) <= rs then return true end
-    end
-    return false
-end
-
-function F.MineAndOwned(b, name)
-    if type(name) ~= "string" then return false end
-    if string_find(name, LIM.emarkOwner, 1, true) == nil then return false end
-    local t = b.type
-    if t == KNOCKUP_TYPE or t == KNOCKBACK_TYPE then return false end
-    return F.SourceIsMine(b)
-end
-
-function F.MarkedByBuff(unit, bySource)
-    local sourced = false
-    local buffs = F.BuffList(unit)
-    if buffs then
-        for i = 1, #buffs do
-            local b = buffs[i]
-            local n = b.name
-            if n ~= nil and EMARK_NAMES[F.Lower(n)] and (tonumber(b.count) or 1) > 0 then
-                return true
-            end
-            if bySource and not sourced and F.MineAndOwned(b, n) then sourced = true end
-        end
-        return sourced
-    end
-    local total = unit.buffCount
-    if type(total) ~= "number" then return false end
-    for i = 0, total - 1 do
-        local b = unit:GetBuff(i)
-        if b then
-            local n = b.name
-            if n ~= nil and EMARK_NAMES[F.Lower(n)] and (tonumber(b.count) or 1) > 0 then
-                return true
-            end
-            if bySource and not sourced and F.MineAndOwned(b, n) then sourced = true end
-        end
-    end
-    return sourced
-end
-
-function F.MarkedByE(unit, ux, uz, br)
-    if F.MarkedByParticle(ux, uz, br) then return true end
-    return F.MarkedByBuff(unit, Menu.combo.eMarkBySource:Value() == true)
-end
-
-function F.SyncSelf()
+local function SyncSelf()
     local p = myHero.pos
-    S.myX, S.myY, S.myZ = p.x, p.y, p.z
-    S.hp = myHero.health
-    S.maxHp = math_max(myHero.maxHealth or 1, 1)
-    S.hpPct = S.hp / S.maxHp
-    S.ms = math_max(myHero.ms or 325, 1)
-    S.br = myHero.boundingRadius or 65
-    S.ad = math_max(myHero.totalDamage or 0, 0)
-    S.bonusAD = math_max(myHero.bonusDamage or 0, 0)
-    S.ap = math_max(myHero.ap or 0, 0)
-    S.crit = math_min(math_max(myHero.critChance or 0, 0), 1)
-    S.aaRange = (myHero.range or 175) + S.br
-    S.lat = ((GameLatency and GameLatency()) or 30) * 0.0005
+    S.x, S.y, S.z = p.x, p.y, p.z
+    S.ad = myHero.bonusDamage or 0
+    S.ap = myHero.ap or 0
+    local mh = myHero.maxHealth
+    S.hpPct = (mh and mh > 0 and myHero.health / mh * 100) or 100
 
     local q = myHero:GetSpellData(SQ)
     local w = myHero:GetSpellData(SW)
     local e = myHero:GetSpellData(SE)
     local r = myHero:GetSpellData(SR)
+    S.qLv, S.wLv, S.eLv, S.rLv = q.level, w.level, e.level, r.level
+    S.qCd, S.wCd, S.eCd, S.rCd = q.currentCd, w.currentCd, e.currentCd, r.currentCd
+    S.qR = S.qLv > 0 and GameCanUseSpell(SQ) == 0
+    S.wR = S.wLv > 0 and GameCanUseSpell(SW) == 0
+    S.eR = S.eLv > 0 and GameCanUseSpell(SE) == 0
+    S.rR = S.rLv > 0 and GameCanUseSpell(SR) == 0
 
-    S.qLv, S.eLv, S.rLv = q.level, e.level, r.level
-    S.qCd = F.PanelCd(q, SQ)
-    S.qR = F.SafeCd(q) == 0 and q.level > 0 and GameCanUseSpell(SQ) == 0
-    S.wCd = F.PanelCd(w, SW)
-    S.wR = F.SafeCd(w) == 0 and w.level > 0 and GameCanUseSpell(SW) == 0
-    S.eCd = F.PanelCd(e, SE)
-    S.eR = e.level > 0 and GameCanUseSpell(SE) == 0
-    S.rCd = F.PanelCd(r, SR)
-    S.rR = F.SafeCd(r) == 0 and r.level > 0 and GameCanUseSpell(SR) == 0
     S.hasQ3 = q.name == Q3_WRAPPER
 
-    local as = myHero.attackSpeed or KIT.baseAS
-    local bonus = math_max(0, as / KIT.baseAS - 1)
-    local delay = math_max(KIT.qDelayMin, KIT.qDelayMax * (1 - math_min(bonus, KIT.qASCap)))
-    local cast = myHero.activeSpell
-    if cast and cast.valid == true and type(cast.windup) == "number" and cast.windup > 0 then
-        local nm = cast.name
-        if nm == "YasuoQ1" or nm == "YasuoQ2" or nm == "YasuoQ3" then
-            delay = cast.windup
-        end
-    end
-    S.qDelay = delay
-
-    local path = myHero.pathing
-    S.dashing = path ~= nil and path.isDashing == true
-    S.casting = F.IsCasting()
-    S.mode = F.OrbMode()
-
-    local flow = myHero.maxMana
-    S.flowPct = (flow and flow > 0 and myHero.mana / flow * 100) or 0
-
-    local _, _, flags, ramp, qst = F.ScanUnit(myHero)
-    S.shield = F.HasFlag(flags, F_SHIELD)
-    S.eRampStacks = ramp
-    S.qStacks = qst
-
-    local ammo = tonumber(q.ammo)
-    if ammo and ammo > 0 and ammo <= 2 and S.qStacks == 0 then S.qStacks = ammo end
-
-    S.eDelay = KIT.eDash / (KIT.eSpeed + S.ms * KIT.eMsShare) + S.lat
-end
-
-function F.SyncEnemies()
-    local sdk = _G.SDK
-    local w = sdk and sdk.Snapshot
-    local n, near, allies = 0, 0, 0
-    local mx, mz = S.myX, S.myZ
-    local stateScan = LIM.stateScan
-
-    if w then
-        for i = 1, (w.enemyN or 0) do
-            local h = w.enemy[i]
-            if F.IsValid(h) then
-                local p = h.pos
-                n = n + 1
-                EHo[n] = h
-                EHh[n] = h.handle
-                EHx[n], EHz[n] = p.x, p.z
-                local d = h.distance
-                if type(d) ~= "number" then
-                    d = math_sqrt(F.DistSqr(p.x, p.z, mx, mz))
-                end
-                EHd[n] = d
-                EHbr[n] = h.boundingRadius or 0
-                EHhp[n] = h.health
-                if d <= stateScan then
-                    local knock, invuln = F.ScanUnit(h)
-                    EHknock[n] = knock
-                    EHinvuln[n] = invuln
-                else
-                    EHknock[n] = false
-                    EHinvuln[n] = false
-                end
-                if d <= KIT.rRange then near = near + 1 end
-            end
-        end
-        for i = 1, (w.allyN or 0) do
-            local a = w.ally[i]
-            if a ~= myHero and F.IsValid(a) then
-                local p = a.pos
-                if F.DistSqr(p.x, p.z, mx, mz) <= 1960000 then allies = allies + 1 end
-            end
-        end
+    if SELF_CAST.ready == nil then
+        SELF_CAST.ready = true
+        SELF_CAST["YasuoQ1"] = true
+        SELF_CAST["YasuoQ2"] = true
+        SELF_CAST["YasuoQ3"] = true
+        SELF_CAST[r.name or "YasuoR"] = true
     end
 
-    for i = n + 1, EHhigh do EHo[i] = nil end
-    EHhigh = n
-    EHn = n
-    S.nearE = near
-    S.nearA = allies
-end
-
-function F.SyncMarks()
-    for i = 1, EHn do
-        EHmark[i] = EHd[i] <= KIT.rRange and F.MarkedByE(EHo[i], EHx[i], EHz[i], EHbr[i]) or false
-    end
-end
-
-function F.SyncMinions()
-    local sdk = _G.SDK
-    local w = sdk and sdk.Snapshot
-    local scan = (S.mode == MODE_CLEAR and LIM.minionScan) or LIM.nearScan
-    local scan2 = scan * scan
-    local mx, mz = S.myX, S.myZ
-    local n, m = 0, 0
-
-    if w then
-        for i = 1, (w.laneN or 0) do
-            local u = w.lane[i]
-            if u then
-                local inside
-                local d = u.distance
-                if type(d) == "number" then
-                    inside = d <= scan
-                else
-                    local p = u.pos
-                    inside = p ~= nil and F.DistSqr(p.x, p.z, mx, mz) <= scan2
-                end
-                if inside and u.team ~= TEAM_JUNGLE and F.IsValidUnit(u) then
-                    local p = u.pos
-                    if p then
-                        n = n + 1
-                        CMo[n] = u
-                        CMx[n], CMz[n] = p.x, p.z
-                        CMbr[n] = u.boundingRadius or 0
-                    end
-                end
-            end
-        end
-        for i = 1, (w.jungleN or 0) do
-            local u = w.jungle[i]
-            if u then
-                local inside
-                local d = u.distance
-                if type(d) == "number" then
-                    inside = d <= scan
-                else
-                    local p = u.pos
-                    inside = p ~= nil and F.DistSqr(p.x, p.z, mx, mz) <= scan2
-                end
-                if inside and F.IsValidUnit(u) then
-                    local p = u.pos
-                    if p then
-                        m = m + 1
-                        JMo[m] = u
-                        JMx[m], JMz[m] = p.x, p.z
-                        JMbr[m] = u.boundingRadius or 60
-                    end
-                end
-            end
-        end
+    S.casting = false
+    local act = myHero.activeSpell
+    if act and act.valid and not act.isStopped then
+        local an = act.name
+        if an and SELF_CAST[an] then S.casting = true end
     end
 
-    for i = n + 1, CMhigh do CMo[i] = nil end
-    CMhigh = n
-    CMn = n
-    for i = m + 1, JMhigh do JMo[i] = nil end
-    JMhigh = m
-    JMn = m
+    local bonus = (myHero.attackSpeed or 1) - 1
+    if bonus < 0 then bonus = 0 end
+    S.qDelay = math_max(Q_DELAY_MIN, Q_DELAY_MAX * (1 - math_min(bonus, Q_AS_CAP)))
+
+    S.qStacks = 0
+    local map = BuffMapOf(myHero)
+    if map then
+        local st = map[BUFF_QSTACK]
+        if st then S.qStacks = st.count or 0 end
+    end
+    if S.qStacks == 0 then
+        local ammo = myHero.hudAmmo
+        if ammo and ammo > 0 and ammo <= 2 then S.qStacks = ammo end
+    end
+
+    S.eStacks = 0
+    if map then
+        local rs = map[BUFF_ERAMP]
+        if rs then S.eStacks = math_min(rs.count or 0, EK.rampMax) end
+    end
+    local v = myHero.armorPenPercent
+    S.penPct = (v and v > 0 and v) or 1
+    v = myHero.bonusArmorPenPercent
+    S.penBonus = (v and v > 0 and v) or 1
+    v = myHero.armorPen
+    S.penFlat = (v and v > 0 and v) or 0
+    v = myHero.magicPenPercent
+    S.mpenPct = (v and v > 0 and v) or 1
+    v = myHero.magicPen
+    S.mpenFlat = (v and v > 0 and v) or 0
+
+    local sdkD = _G.SDK
+    sdkD = sdkD and sdkD.Data
+    if sdkD and sdkD.GetLatency then
+        local ok, lat = pcall(sdkD.GetLatency, sdkD)
+        if ok and type(lat) == "number" and lat > 0 then S.lat = lat end
+    end
+    local ms = myHero.ms
+    if not ms or ms <= 0 then ms = 325 end
+    S.eDelay = EK.dash / (EK.speed + ms * EK.msShare) + S.lat
+
+    S.qRaw = (S.qLv > 0 and Q_BASE[S.qLv] + Q_AD * (myHero.totalDamage or 0)) or 0
+    S.eRaw = (S.eLv > 0 and E_BASE[S.eLv] * (1 + EK.ramp * S.eStacks)
+        + E_AD * S.ad + E_AP * S.ap) or 0
+    S.rRaw = (S.rLv > 0 and R_BASE[S.rLv] + R_AD * S.ad) or 0
+
+    S.mode = OrbMode()
 end
 
-function F.SyncTurrets()
-    local sdk = _G.SDK
-    local om = sdk and sdk.ObjectManager
+local function SyncEnemies()
+    local prev = EHn
     local n = 0
-    if om and om.GetEnemyTurrets then
-        local ok, list = pcall(om.GetEnemyTurrets, om)
-        if ok and type(list) == "table" then
-            local mx, mz = S.myX, S.myZ
-            for i = 1, #list do
-                local t = list[i]
-                if t and not t.dead then
-                    local p = t.pos
-                    if p and F.DistSqr(p.x, p.z, mx, mz) <= LIM.turretSqr then
+    local sx, sz = S.x, S.z
+    local knocked = 0
+    local tgt = nil
+    local sdk = _G.SDK
+    if sdk and sdk.TargetSelector then
+        local t = sdk.TargetSelector:GetTarget(R_RANGE)
+        if t and t.team == TEAM_ENEMY and IsValidUnit(t) then tgt = t end
+    end
+    local tgtId = tgt and tgt.networkID
+    local ti = 0
+    local mode = S.mode
+    local wantMark = S.eR and (mode == 1 or mode == 5)
+    local wantKnock = S.rR
+
+    for k = 1, EListN do
+        local h = EList[k]
+        if IsValidUnit(h) then
+            local p = h.pos
+            local px, pz = p.x, p.z
+            local dx, dz = px - sx, pz - sz
+            local d2 = dx * dx + dz * dz
+            n = n + 1
+            EHo[n] = h
+            EHx[n], EHz[n] = px, pz
+            EHd2[n] = d2
+            EHhp[n] = h.health + (h.shieldAD or 0)
+            EHarm[n] = h.armor
+
+            local mark, knock = false, false
+            if d2 <= R_RANGE2 then
+                if wantMark and d2 <= E_RANGE2 then mark = Marked(h) end
+                if wantKnock then
+                    knock = HasKnock(h)
+                    if knock then knocked = knocked + 1 end
+                end
+            end
+            EHmark[n] = mark
+            EHknock[n] = knock
+
+            if tgtId and h.networkID == tgtId then ti = n end
+        end
+    end
+
+    for i = n + 1, prev do EHo[i] = nil end
+    EHn = n
+    S.ti = ti
+    S.knocked = knocked
+end
+
+local function Harvest(src, srcN, uo, ux, uz, ubr, prev)
+    local n = 0
+    if src then
+        local sx, sz = S.x, S.z
+        for i = 1, srcN do
+            local u = src[i]
+            if u and u.valid and u.visible and not u.dead and u.isTargetable and not u.isImmortal then
+                local p = u.pos
+                if p then
+                    local dx, dz = p.x - sx, p.z - sz
+                    if dx * dx + dz * dz <= Q3_RANGE2 then
                         n = n + 1
-                        TTx[n], TTz[n] = p.x, p.z
+                        uo[n] = u
+                        ux[n], uz[n] = p.x, p.z
+                        ubr[n] = u.boundingRadius or 60
                     end
                 end
             end
         end
     end
-    TTn = n
-    local r = KIT.towerRange + S.br * 0.5
-    S.towerSqr = r * r
-end
-
-function F.SafeFromTurrets(x, z)
-    if TTn == 0 then return true end
-    local rs = S.towerSqr
-    for i = 1, TTn do
-        if F.DistSqr(x, z, TTx[i], TTz[i]) < rs then return false end
-    end
-    return true
-end
-
-local WALL_PROBE = { x = 0, y = 0, z = 0 }
-
-function F.WallMap()
-    if MapPos then return MapPos end
-    MapPos = _G.MapPosition
-    if not MapPos then
-        pcall(require, "MapPositionGOS")
-        MapPos = _G.MapPosition
-    end
-    return MapPos
-end
-
-function F.CellWall(map, cx, cz)
-    if cx == MEMO.cx and cz == MEMO.cz then return MEMO.hit end
-    WALL_PROBE.x, WALL_PROBE.z = cx, cz
-    local ok, hit = pcall(map.inWall, map, WALL_PROBE, true)
-    if not ok then hit = false end
-    hit = hit ~= nil and hit ~= false and hit ~= 0
-    MEMO.cx, MEMO.cz, MEMO.hit = cx, cz, hit
-    return hit
-end
-
-function F.ScanWall(dx, dz)
-    local map = F.WallMap()
-    if not map then return false end
-
-    local size = LIM.cellSize
-    local px, pz = S.myX, S.myZ
-    local cx = math_modf(px * LIM.cellScale)
-    local cz = math_modf(pz * LIM.cellScale)
-
-    local stepX = (dx > 0 and 1) or (dx < 0 and -1) or 0
-    local stepZ = (dz > 0 and 1) or (dz < 0 and -1) or 0
-
-    local tMaxX, tDeltaX = math_huge, math_huge
-    if stepX ~= 0 then
-        local edge = (stepX > 0 and (cx + 1) or cx) * size
-        tMaxX = (edge - px) / dx
-        tDeltaX = size / (dx < 0 and -dx or dx)
-    end
-
-    local tMaxZ, tDeltaZ = math_huge, math_huge
-    if stepZ ~= 0 then
-        local edge = (stepZ > 0 and (cz + 1) or cz) * size
-        tMaxZ = (edge - pz) / dz
-        tDeltaZ = size / (dz < 0 and -dz or dz)
-    end
-
-    if tDeltaX == math_huge and tDeltaZ == math_huge then return false end
-
-    local land = KIT.eDash
-    local limit = land + KIT.wallProbe
-    local t, enter, leave = 0, -1, -1
-
-    while t < limit do
-        if enter < 0 and t >= land then return false end
-        local hit = F.CellWall(map, cx, cz)
-        if hit then
-            if enter < 0 then
-                if t <= 0 then return false end
-                enter = t
-            end
-        elseif enter >= 0 then
-            leave = t
-            break
-        end
-        if tMaxX < tMaxZ then
-            t = tMaxX
-            cx = cx + stepX
-            tMaxX = tMaxX + tDeltaX
-        else
-            t = tMaxZ
-            cz = cz + stepZ
-            tMaxZ = tMaxZ + tDeltaZ
-        end
-    end
-
-    if enter < 0 or enter >= land then return false end
-    if leave < 0 then return false end
-    if leave <= land then return 1 end
-    if land - enter > (leave - enter) * KIT.wallPassFrac then return 2 end
-    return false
-end
-
-function F.DashCrossesWall(ex, ez)
-    if not F.WallMap() then return false end
-    local dx, dz = ex - S.myX, ez - S.myZ
-    local len = math_sqrt(dx * dx + dz * dz)
-    if len < 1 then return false end
-    dx, dz = dx / len, dz / len
-    local q = LIM.wjQuant
-    local key = (math_modf(dx * q) + q) * LIM.wjSpread + math_modf(dz * q) + q
-    local stamp, rankOf = MEMO.stamp, MEMO.rank
-    if stamp[key] == TICK then return rankOf[key] end
-    local rank = F.ScanWall(dx, dz)
-    stamp[key] = TICK
-    rankOf[key] = rank
-    return rank
-end
-
-local EBlk = {}
-local EBlkN = 0
-
-function F.ClearEBlock()
-    if EBlkN == 0 then return end
-    EBlk = {}
-    EBlkN = 0
-end
-
-function F.BlockE(unit)
-    local h = unit.handle
-    if h == nil or EBlk[h] ~= nil then return end
-    EBlk[h] = true
-    EBlkN = EBlkN + 1
-end
-
-function F.IsEBlocked(unit)
-    if EBlkN == 0 then return false end
-    local h = unit.handle
-    return h ~= nil and EBlk[h] ~= nil
-end
-
-function F.PushDash(n, unit, ux, uz, isHero, needWall, marked)
-    if marked then return n end
-    local dx, dz = ux - S.myX, uz - S.myZ
-    local len = math_sqrt(dx * dx + dz * dz)
-    if len < 1 then return n end
-    local ex = S.myX + dx / len * KIT.eDash
-    local ez = S.myZ + dz / len * KIT.eDash
-    n = n + 1
-    DUo[n] = unit
-    DUx[n], DUz[n] = ex, ez
-    DUsafe[n] = F.SafeFromTurrets(ex, ez)
-    DUwall[n] = needWall and F.DashCrossesWall(ex, ez) or false
-    DUhero[n] = isHero
+    for i = n + 1, prev do uo[i] = nil end
     return n
 end
 
-function F.SyncDashTargets(needWall)
-    if S.dashing or not S.eR then F.ClearEBlock() end
-    local n, blocked = 0, 0
-    local base = KIT.eRange
-    local mx, mz = S.myX, S.myZ
-
-    for i = 1, CMn do
-        local reach = base + CMbr[i]
-        if F.DistSqr(CMx[i], CMz[i], mx, mz) <= reach * reach then
-            local u = CMo[i]
-            if F.IsEBlocked(u) then
-                blocked = blocked + 1
-            else
-                n = F.PushDash(n, u, CMx[i], CMz[i], false, needWall,
-                    F.MarkedByE(u, CMx[i], CMz[i], CMbr[i]))
-            end
-        end
+local function SyncMinions()
+    local mode = S.mode
+    local want = mode == 2 or mode == 3 or mode == 4 or mode == 5
+        or (mode == 1 and Menu.combo.gap:Value() == true)
+    if not want then
+        for i = 1, CMn do CMo[i] = nil end
+        for i = 1, JMn do JMo[i] = nil end
+        CMn, JMn = 0, 0
+        return
     end
-    for i = 1, JMn do
-        local reach = base + JMbr[i]
-        if F.DistSqr(JMx[i], JMz[i], mx, mz) <= reach * reach then
-            local u = JMo[i]
-            if F.IsEBlocked(u) then
-                blocked = blocked + 1
-            else
-                n = F.PushDash(n, u, JMx[i], JMz[i], false, needWall,
-                    F.MarkedByE(u, JMx[i], JMz[i], JMbr[i]))
-            end
-        end
+    local sdk = _G.SDK
+    local w = sdk and sdk.Snapshot
+    if not w then
+        CMn, JMn = 0, 0
+        return
     end
-    for i = 1, EHn do
-        local reach = base + EHbr[i]
-        if F.DistSqr(EHx[i], EHz[i], mx, mz) <= reach * reach then
-            local u = EHo[i]
-            if F.IsEBlocked(u) then
-                blocked = blocked + 1
-            else
-                n = F.PushDash(n, u, EHx[i], EHz[i], true, needWall, EHmark[i])
-            end
-        end
-    end
-
-    for i = n + 1, DUhigh do DUo[i] = nil end
-    DUhigh = n
-    DUn = n
-    if n == 0 and blocked > 0 then F.ClearEBlock() end
+    CMn = Harvest(w.lane, w.laneN or 0, CMo, CMx, CMz, CMbr, CMn)
+    JMn = Harvest(w.jungle, w.jungleN or 0, JMo, JMx, JMz, JMbr, JMn)
 end
 
-function F.PredictXZ(unit, delay, kx, kz)
-    local px, pz = kx, kz
-    if px == nil then
-        local p = unit.pos
-        if p == nil then return nil, nil end
-        px, pz = p.x, p.z
-    end
-    if delay <= 0 then return px, pz end
-    local path = unit.pathing
-    if path == nil then return px, pz end
-    if path.isDashing then
-        local e = path.endPos
-        if e then return e.x, e.z end
-        return px, pz
-    end
-    if not path.hasMovePath then return px, pz end
-    local ms = unit.ms
-    if ms == nil or ms <= 0 then return px, pz end
-    local remain = delay
-    local lx, lz = px, pz
-    for i = path.pathIndex, path.pathCount do
-        local node = unit:GetPath(i)
-        if node == nil then break end
-        local nx, nz = node.x, node.z
-        local seg = math_sqrt(F.DistSqr(nx, nz, lx, lz))
-        if seg < 1 then
-            lx, lz = nx, nz
-        else
-            local segTime = seg / ms
-            if remain > segTime then
-                remain = remain - segTime
-                lx, lz = nx, nz
-            else
-                local t = ms * remain / seg
-                return lx + (nx - lx) * t, lz + (nz - lz) * t
-            end
-        end
-    end
-    return lx, lz
+local function OnSegment(ax, az, bx, bz, cx, cz)
+    local abx, abz = bx - ax, bz - az
+    local den = abx * abx + abz * abz
+    if den < 1 then return ax, az, false end
+    local raw = ((cx - ax) * abx + (cz - az) * abz) / den
+    if raw < 0 or raw > 1 then return ax, az, false end
+    return ax + raw * abx, az + raw * abz, true
 end
 
-function F.HealthAfter(unit, t)
+local function CountArc(cx, cz, n, xs, zs)
+    local c = 0
+    for i = 1, n do
+        local dx, dz = xs[i] - cx, zs[i] - cz
+        if dx * dx + dz * dz <= Q_ARC2 then c = c + 1 end
+    end
+    return c
+end
+
+local function CountLine(tx, tz, n, xs, zs, brs)
+    local c = 0
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local jx, jz, on = OnSegment(sx, sz, tx, tz, xs[i], zs[i])
+        if on then
+            local reach = Q3_RADIUS + brs[i]
+            local dx, dz = xs[i] - jx, zs[i] - jz
+            if dx * dx + dz * dz <= reach * reach then c = c + 1 end
+        end
+    end
+    return c
+end
+
+local function HealthAfter(unit, delay)
     local sdk = _G.SDK
     local hp = sdk and sdk.HealthPrediction
     if hp and hp.GetPrediction then
-        local ok, v = pcall(hp.GetPrediction, hp, unit, t)
+        local ok, v = pcall(hp.GetPrediction, hp, unit, delay)
         if ok and type(v) == "number" then return v end
     end
     return unit.health or 0
 end
 
-function F.ProjectOnSegment(ax, az, bx, bz, cx, cz)
-    local abx, abz = bx - ax, bz - az
-    local denom = abx * abx + abz * abz
-    if denom < 1 then return ax, az, false end
-    local raw = ((cx - ax) * abx + (cz - az) * abz) / denom
-    local clamped = (raw < 0 and 0) or (raw > 1 and 1) or raw
-    return ax + clamped * abx, az + clamped * abz, clamped == raw
-end
-
-local GGPredQ, GGPredQ3 = nil, nil
-local PredTries = 0
-
-function F.EnsurePred()
-    if GGPredQ then return true end
-    local gg = _G.GGPrediction
-    if not gg or type(gg.SpellPrediction) ~= "function" then
-        PredTries = PredTries + 1
-        if PredTries == 300 then
-            print("[" .. SCRIPT_NAME .. "] GGPrediction unavailable, Q will not fire")
-        end
-        return false
-    end
-    GGPredQ = gg:SpellPrediction({
-        Type = gg.SPELLTYPE_LINE, Delay = KIT.qDelayMax, Radius = KIT.qRadius,
-        Range = KIT.qRange, Speed = KIT.qSpeed, Collision = false,
-    })
-    GGPredQ3 = gg:SpellPrediction({
-        Type = gg.SPELLTYPE_LINE, Delay = KIT.qDelayMax, Radius = KIT.q3Radius,
-        Range = KIT.q3Range, Speed = KIT.q3Speed, Collision = false,
-    })
-    return true
-end
-
-function F.HitChanceOf(menuVal)
-    local gg = _G.GGPrediction
-    if not gg then return 0 end
-    if menuVal == 1 then return gg.HITCHANCE_NORMAL end
-    if menuVal == 2 then return gg.HITCHANCE_HIGH end
-    return gg.HITCHANCE_IMMOBILE
-end
-
-function F.Evaluate(pred, target, want)
-    pred.Delay = S.qDelay
-    local ok = pcall(pred.GetPrediction, pred, target, myHero)
-    if not ok then return nil, nil end
-    local cp = pred.CastPosition
-    if cp == nil or cp.x == nil or cp.z == nil then return nil, nil end
-    local got, can = pcall(pred.CanHit, pred, want)
-    if not got or not can then return nil, nil end
-    return cp.x, cp.z
-end
-
-function F.PredQ(i, want)
-    if PQs[i] ~= TICK then
-        PQs[i] = TICK
-        if F.EnsurePred() then
-            PQx[i], PQz[i] = F.Evaluate(GGPredQ, EHo[i], want)
-        else
-            PQx[i], PQz[i] = nil, nil
+local function EnemyTurrets()
+    if TurTick == TICK then return end
+    TurTick = TICK
+    TurN = 0
+    local sdk = _G.SDK
+    local om = sdk and sdk.ObjectManager
+    if not om or not om.GetEnemyTurrets then return end
+    local ok, list = pcall(om.GetEnemyTurrets, om, 3000)
+    if not ok or type(list) ~= "table" then return end
+    for i = 1, #list do
+        local t = list[i]
+        local p = t and t.pos
+        if p then
+            TurN = TurN + 1
+            TurX[TurN], TurZ[TurN] = p.x, p.z or p.y
         end
     end
-    return PQx[i], PQz[i]
 end
 
-function F.PredQ3(i, want)
-    if P3s[i] ~= TICK then
-        P3s[i] = TICK
-        if F.EnsurePred() then
-            P3x[i], P3z[i] = F.Evaluate(GGPredQ3, EHo[i], want)
-        else
-            P3x[i], P3z[i] = nil, nil
+local function UnderTurret(x, z)
+    EnemyTurrets()
+    for i = 1, TurN do
+        local dx, dz = x - TurX[i], z - TurZ[i]
+        if dx * dx + dz * dz <= TURRET_RANGE2 then return true end
+    end
+    return false
+end
+
+local function CrowdAt(x, z, limit)
+    local n = 0
+    for i = 1, EHn do
+        local dx, dz = EHx[i] - x, EHz[i] - z
+        if dx * dx + dz * dz <= 1000000 then
+            n = n + 1
+            if n >= limit then return true end
         end
     end
-    return P3x[i], P3z[i]
+    return false
 end
 
-function F.LibDamage(key, target)
-    local fn = _G.getdmg
-    if type(fn) ~= "function" then return 0 end
-    local ok, dmg = pcall(fn, key, target, myHero)
-    if ok and type(dmg) == "number" and dmg > 0 then return dmg end
+local function QDamage(i) return S.qRaw * PhysMul(EHarm[i]) end
+local function RDamage(i) return S.rRaw * PhysMul(EHarm[i], R_ARMOR_PEN) end
+
+local function AckWindow()
+    local sdk = _G.SDK
+    local d = sdk and sdk.Data
+    if d and d.GetLatency then
+        local ok, lat = pcall(d.GetLatency, d)
+        if ok and type(lat) == "number" and lat > 0 then return lat * 2 + 0.30 end
+    end
+    return 0.45
+end
+
+local TgtTick = -1
+local TgtCache = {}
+
+local function IndexOfUnit(unit)
+    if not unit then return 0 end
+    local id = unit.networkID
+    if id == nil then return 0 end
+    for i = 1, EHn do
+        local o = EHo[i]
+        if o and o.networkID == id then return i end
+    end
     return 0
 end
 
-function F.ERawDamage()
-    local lv = S.eLv
-    if lv == 0 then return 0 end
-    local ramp = 1 + KIT.eRamp * math_min(S.eRampStacks, KIT.eRampMax)
-    return KIT.eBase[lv] * ramp + KIT.eAD * S.bonusAD + KIT.eAP * S.ap
-end
-
-function F.QDamage(i)
-    if S.qLv == 0 then return 0 end
-    local target = EHo[i]
-    local dmg = F.LibDamage("Q", target)
-    if dmg > 0 then return dmg end
-    return F.Mitigate(target, DMG_PHYS, KIT.qBase[S.qLv] + KIT.qAD * S.ad)
-end
-
-function F.EDamage(i)
-    if S.eLv == 0 then return 0 end
-    local target = EHo[i]
-    local dmg = F.LibDamage("E", target)
-    if dmg > 0 then
-        return dmg * (1 + KIT.eRamp * math_min(S.eRampStacks, KIT.eRampMax))
+local function Target(range, range2)
+    if TgtTick ~= TICK then
+        TgtTick = TICK
+        for k in pairs(TgtCache) do TgtCache[k] = nil end
     end
-    return F.Mitigate(target, DMG_MAGIC, F.ERawDamage())
-end
+    local hit = TgtCache[range]
+    if hit then return hit end
 
-function F.RDamage(i)
-    if S.rLv == 0 then return 0 end
-    local raw = KIT.rBase[S.rLv] + KIT.rAD * S.bonusAD
-    return F.MitigatePen(EHo[i], raw, KIT.rArmorPen)
-end
-
-function F.AADamage(i)
-    local target = EHo[i]
-    local mod = 1 + S.crit * KIT.critBonus
-    local raw = F.LibDamage("AA", target)
-    if raw > 0 then return raw * mod end
-    return F.Mitigate(target, DMG_PHYS, S.ad * mod)
-end
-
-function F.IgniteSlot()
-    if myHero:GetSpellData(SUM_1).name == "SummonerDot" and GameCanUseSpell(SUM_1) == 0 then
-        return SUM_1, HK_SUM_1
-    end
-    if myHero:GetSpellData(SUM_2).name == "SummonerDot" and GameCanUseSpell(SUM_2) == 0 then
-        return SUM_2, HK_SUM_2
-    end
-    return nil, nil
-end
-
-function F.IgniteDamage()
-    local slot = F.IgniteSlot()
-    if slot == nil then return 0 end
-    local ld = myHero.levelData
-    return 50 + 20 * ((ld and ld.lvl) or 1)
-end
-
-function F.ComboDamage(i)
-    if DMs[i] == TICK then return DMv[i] end
-    DMs[i] = TICK
-    local total = 0
-    if S.qR then
-        total = total + F.QDamage(i) * (S.hasQ3 and 1 or 2)
-    end
-    if S.eR and not EHmark[i] then
-        total = total + F.EDamage(i)
-    end
-    local rUseful = S.rR and (S.hasQ3 or EHknock[i])
-    if rUseful then
-        total = total + F.RDamage(i)
-    end
-    local aa = F.AADamage(i)
-    total = total + aa * ((rUseful or S.hasQ3) and 3 or 2)
-    DMv[i] = total
-    return total
-end
-
-function F.Killable(i)
-    return F.ComboDamage(i) >= EHhp[i]
-end
-
-function F.Pick()
-    if tsTick == TICK then return tsIdx end
-    tsTick = TICK
-    tsIdx = 0
-    local sdk = _G.SDK
-    if not sdk or not sdk.TargetSelector or not sdk.ObjectManager then return 0 end
-    local widest = Menu.combo.eGapRange:Value()
-    if KIT.q3Range > widest then widest = KIT.q3Range end
-    local ok, heroes = pcall(sdk.ObjectManager.GetEnemyHeroes, sdk.ObjectManager, widest, false)
-    if not ok or type(heroes) ~= "table" then return 0 end
-    local got, picked = pcall(sdk.TargetSelector.GetTarget, sdk.TargetSelector, heroes)
-    if got and picked then
-        local h = picked.handle
-        for i = 1, EHn do
-            if EHh[i] == h then
-                tsIdx = i
-                break
+    local pick = 0
+    local i = S.ti
+    if i ~= 0 and EHd2[i] <= range2 then
+        pick = i
+    else
+        local sdk = _G.SDK
+        if sdk and sdk.TargetSelector then
+            local t = sdk.TargetSelector:GetTarget(range)
+            if t and t.team == TEAM_ENEMY then
+                local j = IndexOfUnit(t)
+                if j ~= 0 and EHd2[j] <= range2 then pick = j end
             end
         end
-    end
-    return tsIdx
-end
-
-function F.InRange(i, range)
-    return EHd[i] <= range + EHbr[i]
-end
-
-function F.Target(range)
-    local i = F.Pick()
-    if i ~= 0 and not EHinvuln[i] and F.InRange(i, range) then return i end
-    local best, bestHp = 0, math_huge
-    for k = 1, EHn do
-        if not EHinvuln[k] and F.InRange(k, range) and EHhp[k] < bestHp then
-            best, bestHp = k, EHhp[k]
-        end
-    end
-    return best
-end
-
-function F.TradeOk()
-    local node = Menu.combo.trade
-    if not node.enable:Value() then return true end
-    if node.antiGank:Value() and S.nearE >= S.nearA + 2 then return false end
-    if node.shield:Value() and not S.shield then
-        if S.flowPct < node.flowPct:Value() then return false end
-    end
-    return true
-end
-
-function F.EQWillHit(ex, ez, px, pz, br)
-    local reach = KIT.qCircle + br
-    return F.DistSqr(ex, ez, px, pz) <= reach * reach
-end
-
-function F.BestEToTarget(i, avoidTower)
-    local px, pz = F.PredictXZ(EHo[i], S.eDelay, EHx[i], EHz[i])
-    if px == nil then return 0, math_huge, false, 0 end
-    local br = EHbr[i]
-    local currentSqr = F.DistSqr(S.myX, S.myZ, px, pz)
-    local qSoon = S.qCd <= S.eDelay + 0.1 and S.qLv > 0
-    local bestIdx, bestDistSqr, bestEQ = 0, math_huge, false
-    for k = 1, DUn do
-        if not (avoidTower and not DUsafe[k]) then
-            local ex, ez = DUx[k], DUz[k]
-            local d2 = F.DistSqr(ex, ez, px, pz)
-            local eq = qSoon and F.EQWillHit(ex, ez, px, pz, br)
-            if eq then
-                if not bestEQ or d2 < bestDistSqr then
-                    bestIdx, bestDistSqr, bestEQ = k, d2, true
-                end
-            elseif not bestEQ and d2 < bestDistSqr and d2 < currentSqr then
-                bestIdx, bestDistSqr = k, d2
-            end
-        end
-    end
-    return bestIdx, bestDistSqr, bestEQ, currentSqr
-end
-
-function F.BestEToCursor(avoidTower)
-    local mx, mz = F.MouseXZ()
-    if mx == nil then return 0, math_huge end
-    local bestIdx, bestDistSqr = 0, math_huge
-    for k = 1, DUn do
-        if not (avoidTower and not DUsafe[k]) then
-            local d2 = F.DistSqr(DUx[k], DUz[k], mx, mz)
-            if d2 < bestDistSqr then
-                bestIdx, bestDistSqr = k, d2
-            end
-        end
-    end
-    return bestIdx, bestDistSqr
-end
-
-function F.BestEToward(tx, tz, avoidTower, preferHero)
-    local current = F.DistSqr(S.myX, S.myZ, tx, tz)
-    local bestIdx, bestDistSqr, bestHero = 0, math_huge, false
-    for k = 1, DUn do
-        if not (avoidTower and not DUsafe[k]) then
-            local d2 = F.DistSqr(DUx[k], DUz[k], tx, tz)
-            if d2 < current then
-                local isHero = DUhero[k]
-                if bestIdx == 0
-                    or (preferHero and isHero and not bestHero)
-                    or (d2 < bestDistSqr and (not preferHero or isHero == bestHero)) then
-                    bestIdx, bestDistSqr, bestHero = k, d2, isHero
+        if pick == 0 then
+            local bestD = math_huge
+            for k = 1, EHn do
+                local d2 = EHd2[k]
+                if d2 <= range2 and d2 < bestD then
+                    pick, bestD = k, d2
                 end
             end
         end
     end
-    return bestIdx
+
+    TgtCache[range] = pick
+    return pick
 end
 
-function F.CastE(k)
-    if not S.eR or S.dashing or SentTick[SE] == TICK then return false end
-    if not F.SlotFree(SE) then return false end
-    local unit = DUo[k]
-    if unit == nil then return false end
-    if CastSpell(HKE, unit) == false then return false end
-    F.MarkSent(SE)
-    F.BlockE(unit)
-    return true
-end
-
-function F.CastEAimed(k)
-    if not S.eR or S.dashing or SentTick[SE] == TICK then return false end
-    local unit = DUo[k]
-    if unit == nil then return false end
-    if not F.SendAtUnit(HKE, SE, unit) then return false end
-    F.BlockE(unit)
-    return true
-end
-
-function F.CastQ(i, want)
-    if not S.qR or S.dashing or S.hasQ3 or S.casting then return false end
-    if SentTick[SQ] == TICK or not F.CanMove() then return false end
-    if not F.InRange(i, KIT.qRange) then return false end
-    local cx, cz = F.PredQ(i, want)
-    if cx == nil then return false end
-    return F.SendAt(HKQ, SQ, cx, cz)
-end
-
-function F.CastQ3(i, want)
-    if not S.qR or S.dashing or not S.hasQ3 or S.casting then return false end
-    if SentTick[SQ] == TICK or not F.CanMove() then return false end
-    if not F.InRange(i, KIT.q3Range) then return false end
-    local cx, cz = F.PredQ3(i, want)
-    if cx == nil then return false end
-    return F.SendAt(HKQ, SQ, cx, cz)
-end
-
-function F.CastQAt(x, z)
-    if not S.qR or S.dashing or S.casting then return false end
-    if SentTick[SQ] == TICK or not F.CanMove() then return false end
-    return F.SendAt(HKQ, SQ, x, z)
-end
-
-function F.HoldQ()
-    if not S.qR then return false end
-    Control.KeyDown(HKQ)
-    qHeld = true
-    F.AllowAttack(false)
-    return true
-end
-
-function F.ReleaseQ()
-    if not qHeld then return end
-    Control.KeyUp(HKQ)
-    qHeld = false
-    F.AllowAttack(true)
-end
-
-function F.CountCircle(cx, cz, n, xs, zs)
-    local count = 0
-    for i = 1, n do
-        if F.DistSqr(xs[i], zs[i], cx, cz) <= QCIRCLE2 then count = count + 1 end
+local function SlotFree(slot)
+    if not PendUntil[slot] then return true end
+    if GameCanUseSpell(slot) ~= 0 then
+        PendUntil[slot] = nil
+        return true
     end
-    return count
-end
-
-function F.MinionPred(i)
-    if CMps[i] ~= TICK then
-        CMps[i] = TICK
-        local d = math_sqrt(F.DistSqr(CMx[i], CMz[i], S.myX, S.myZ))
-        CMpx[i], CMpz[i] = F.PredictXZ(CMo[i], S.qDelay + d / KIT.q3Speed, CMx[i], CMz[i])
-    end
-    return CMpx[i], CMpz[i]
-end
-
-function F.CountQ3Line(tx, tz)
-    local count = 0
-    local reachBase = KIT.q3Radius
-    local mx, mz = S.myX, S.myZ
-    for i = 1, CMn do
-        if F.DistSqr(CMx[i], CMz[i], mx, mz) <= Q3_RANGE2 then
-            local px, pz = F.MinionPred(i)
-            if px then
-                local jx, jz, onSeg = F.ProjectOnSegment(mx, mz, tx, tz, px, pz)
-                if onSeg then
-                    local reach = reachBase + CMbr[i]
-                    if F.DistSqr(px, pz, jx, jz) <= reach * reach then count = count + 1 end
-                end
-            end
-        end
-    end
-    return count
-end
-
-function F.StackQ()
-    if not S.qR or S.hasQ3 or S.dashing or S.casting then return false end
-    local reach = KIT.qRange + 20
-    local rs = reach * reach
-    local mx, mz = S.myX, S.myZ
-    local bx, bz, best, bestD = nil, nil, 0, math_huge
-    for i = 1, CMn do
-        local d2 = F.DistSqr(CMx[i], CMz[i], mx, mz)
-        if d2 <= rs then
-            local c = F.CountCircle(CMx[i], CMz[i], CMn, CMx, CMz)
-            if c > best or (c == best and d2 < bestD) then
-                bx, bz, best, bestD = CMx[i], CMz[i], c, d2
-            end
-        end
-    end
-    if bx then return F.CastQAt(bx, bz) end
-    for i = 1, JMn do
-        local d2 = F.DistSqr(JMx[i], JMz[i], mx, mz)
-        if d2 <= rs then
-            local c = F.CountCircle(JMx[i], JMz[i], JMn, JMx, JMz)
-            if c > best or (c == best and d2 < bestD) then
-                bx, bz, best, bestD = JMx[i], JMz[i], c, d2
-            end
-        end
-    end
-    if bx then return F.CastQAt(bx, bz) end
-    return false
-end
-
-function F.DashQ()
-    if not S.dashing or not S.qR then return false end
-    if not Menu.combo.qInDash:Value() then return false end
-    local mx, mz = S.myX, S.myZ
-    for i = 1, EHn do
-        if not EHinvuln[i] then
-            local px, pz = F.PredictXZ(EHo[i], S.lat, EHx[i], EHz[i])
-            if px and F.EQWillHit(mx, mz, px, pz, EHbr[i]) then return F.HoldQ() end
-        end
-    end
-    for i = 1, CMn do
-        if F.DistSqr(mx, mz, CMx[i], CMz[i]) <= QCIRCLE2 then return F.HoldQ() end
-    end
-    for i = 1, JMn do
-        if F.DistSqr(mx, mz, JMx[i], JMz[i]) <= QCIRCLE2 then return F.HoldQ() end
+    if GameTimer() >= PendUntil[slot] then
+        PendUntil[slot] = nil
+        return true
     end
     return false
 end
 
-function F.Ultimate()
-    if not S.rR or S.rLv == 0 then return false end
-    local node = Menu.ult
-    if not node.team:Value() then return false end
-    if S.dashing and node.noRDash:Value() then return false end
-    if SentTick[SR] == TICK then return false end
-    local need = node.teamMin:Value()
-    local bestIdx, bestCount = 0, 0
-    for i = 1, EHn do
-        if EHknock[i] and not EHinvuln[i] and F.InRange(i, KIT.rRange) then
-            local count = 1
-            for j = 1, EHn do
-                if j ~= i and EHknock[j]
-                    and F.DistSqr(EHx[i], EHz[i], EHx[j], EHz[j]) < 160000 then
-                    count = count + 1
-                end
-            end
-            if count > bestCount then bestIdx, bestCount = i, count end
-        end
-    end
-    if bestIdx == 0 then return false end
-    if bestCount < need and not F.Killable(bestIdx) then return false end
-    return F.SendAtUnit(HKR, SR, EHo[bestIdx])
+local function MarkSent(slot)
+    PendUntil[slot] = GameTimer() + AckWindow()
+    SentTick[slot] = TICK
 end
 
-function F.Airblade()
-    if not Menu.ult.airblade:Value() then return false end
-    if not S.rR or not S.eR or S.dashing then return false end
-    local bestIdx = 0
-    for i = 1, EHn do
-        if EHknock[i] and not EHinvuln[i] and F.InRange(i, KIT.rRange) then
-            bestIdx = i
-            break
-        end
+local function Send(hk, slot, x, z)
+    if not SlotFree(slot) then return false end
+    if type(x) ~= "number" or x ~= x or type(z) ~= "number" or z ~= z then return false end
+    Pos.x, Pos.y, Pos.z = x, S.y, z
+    local lk = Menu.debug.trace:Value() and _G.Lowkey
+    if lk and lk.Log then
+        lk:Log("yasuo", string_format("send slot %d at %.0f %.0f mode %d", slot, x, z, S.mode))
     end
-    if bestIdx == 0 then return false end
-    if EHd[bestIdx] <= KIT.rRange - KIT.eDash then return false end
-    local k = F.BestEToward(EHx[bestIdx], EHz[bestIdx], Menu.combo.noETower:Value(), true)
-    if k == 0 then return false end
-    return F.CastE(k)
+    if CastSpell(hk, Pos) == false then return false end
+    MarkSent(slot)
+    return true
 end
 
-function F.Ignite()
-    local node = Menu.combo.ign
-    if not node.use:Value() then return false end
-    local slot, key = F.IgniteSlot()
-    if slot == nil then return false end
-    if SentTick[slot] == TICK or not F.SlotFree(slot) then return false end
-    local ignite = F.IgniteDamage()
-    local killOnly = node.mode:Value() == 1
-    for i = 1, EHn do
-        if not EHinvuln[i] and F.InRange(i, KIT.igniteRange) then
-            if ignite >= EHhp[i] then return F.SendAtUnit(key, slot, EHo[i]) end
-            if not killOnly and F.ComboDamage(i) + ignite >= EHhp[i] then
-                return F.SendAtUnit(key, slot, EHo[i])
-            end
-        end
-    end
-    return false
+local function Whole(v)
+    if type(v) ~= "number" or v ~= v or v < -32000 or v > 32000 then return nil end
+    return math_floor(v)
 end
 
-function F.Combo()
-    local node = Menu.combo
-    local trade = F.TradeOk()
-
-    if node.useE:Value() and S.eR and trade and not S.dashing then
-        local gap = node.eGapRange:Value()
-        local i = F.Target(gap)
-        if i ~= 0 then
-            local mode = node.eMode:Value()
-            if mode == 3 then
-                mode = (EHd[i] > S.aaRange + 100 and 1) or 2
-            end
-            if mode == 1 then
-                local k, d2, eq, currentSqr = F.BestEToTarget(i, node.noETower:Value())
-                if k ~= 0 then
-                    local closes = d2 < currentSqr
-                    local onTarget = DUo[k] == EHo[i]
-                    local allow = closes or eq or onTarget
-                    if allow and (EHd[i] > S.aaRange or eq or node.eEngage:Value() or onTarget) then
-                        if F.CastE(k) then return true end
-                    end
-                end
-            else
-                local k, d2 = F.BestEToCursor(node.noETower:Value())
-                local mx, mz = F.MouseXZ()
-                if k ~= 0 and mx then
-                    local cursorSqr = F.DistSqr(S.myX, S.myZ, mx, mz)
-                    if d2 < cursorSqr and F.CastE(k) then return true end
-                end
-            end
-        end
-    end
-
-    if node.useQ3:Value() and S.hasQ3 then
-        local want = F.HitChanceOf(Menu.pred.hcQ3:Value())
-        local bestIdx, bestHp = 0, math_huge
-        for i = 1, EHn do
-            if not EHinvuln[i] and F.InRange(i, KIT.q3Range) then
-                if F.Killable(i) and EHhp[i] < bestHp then bestIdx, bestHp = i, EHhp[i] end
-            end
-        end
-        if bestIdx == 0 then bestIdx = F.Target(KIT.q3Range) end
-        if bestIdx ~= 0 and F.CastQ3(bestIdx, want) then return true end
-    end
-
-    if node.useQ:Value() and not S.hasQ3 then
-        local want = F.HitChanceOf(Menu.pred.hcQ:Value())
-        local i = F.Target(KIT.qRange)
-        if i ~= 0 and F.CastQ(i, want) then return true end
-        if node.stackQ:Value() and F.StackQ() then return true end
-    end
-
-    return F.Ignite()
+local function SaveCursor()
+    if CursorBackX then return end
+    local cp = _G.cursorPos
+    if not cp then return end
+    local x, y = Whole(cp.x), Whole(cp.y)
+    if x and y then CursorBackX, CursorBackY = x, y end
 end
 
-function F.Harass()
-    local node = Menu.harass
-    if node.useQ3:Value() and S.hasQ3 then
-        local i = F.Target(KIT.q3Range)
-        if i ~= 0 and F.CastQ3(i, F.HitChanceOf(Menu.pred.hcQ3:Value())) then return true end
-    end
-    if node.useQ:Value() and not S.hasQ3 then
-        local i = F.Target(KIT.qRange)
-        if i ~= 0 and F.CastQ(i, F.HitChanceOf(Menu.pred.hcQ:Value())) then return true end
-    end
-    if node.stackQ:Value() then return F.StackQ() end
-    return false
+local function RestoreCursor()
+    local x, y = CursorBackX, CursorBackY
+    CursorBackX, CursorBackY = nil, nil
+    if x and y then SetCursorPos(x, y) end
 end
 
-function F.Clear()
-    local node = Menu.clear
-    local mx, mz = S.myX, S.myZ
+local function SendUnit(hk, slot, unit)
+    if not SlotFree(slot) then return false end
+    local p = unit.pos
+    if p == nil then return false end
+    local p2 = unit.pos2D
+    if p2 == nil or p2.onScreen ~= true then return false end
+    local lk = Menu.debug.trace:Value() and _G.Lowkey
+    if lk and lk.Log then
+        lk:Log("yasuo", string_format("send slot %d on %s mode %d", slot,
+            tostring(unit.charName), S.mode))
+    end
+    SaveCursor()
+    if CastSpell(hk, p) == false then return false end
+    MarkSent(slot)
+    return true
+end
 
-    if JMn > 0 then
-        if node.useQ3:Value() and S.hasQ3 then
-            local bx, bz, best = nil, nil, 0
-            for i = 1, JMn do
-                if F.DistSqr(JMx[i], JMz[i], mx, mz) <= Q3_RANGE2 then
-                    local c = F.CountCircle(JMx[i], JMz[i], JMn, JMx, JMz)
-                    if c > best then bx, bz, best = JMx[i], JMz[i], c end
-                end
-            end
-            if bx and F.CastQAt(bx, bz) then return true end
-        end
-        if node.useQ:Value() and not S.hasQ3 then
-            local reach = KIT.qRange + 20
-            local rs = reach * reach
-            for i = 1, JMn do
-                if F.DistSqr(JMx[i], JMz[i], mx, mz) <= rs then
-                    if F.CastQAt(JMx[i], JMz[i]) then return true end
-                end
-            end
-        end
-        if node.useE:Value() and S.eR and not S.dashing and F.CanMove() then
-            local k = 0
-            for j = 1, DUn do
-                if not DUhero[j] and (not node.noETower:Value() or DUsafe[j]) then
-                    k = j
-                    break
-                end
-            end
-            if k ~= 0 and F.CastE(k) then return true end
-        end
+local function PredictAt(pred, i, want, range2)
+    if not pred then return EHx[i], EHz[i] end
+    pred.Delay = S.qDelay
+    pred:GetPrediction(EHo[i], myHero)
+    if not pred:CanHit(want) then return nil end
+    local cp = pred.CastPosition
+    if not (cp and cp.x and cp.z) then return nil end
+    local dx, dz = cp.x - S.x, cp.z - S.z
+    if range2 and dx * dx + dz * dz > range2 then return nil end
+    return cp.x, cp.z
+end
+
+local function CastQ(i)
+    if i == 0 or not S.qR or S.casting or SentTick[SQ] == TICK then return false end
+    if S.hasQ3 then
+        if EHd2[i] > Q3_RANGE2 then return false end
+        local x, z = PredictAt(PredQ3, i, HitOf(Menu.pred.q3Hit:Value()), Q3_RANGE2)
+        if not x then return false end
+        return Send(HK_Q, SQ, x, z)
+    end
+    if EHd2[i] > Q_RANGE2 then return false end
+    local x, z = PredictAt(PredQ, i, HitOf(Menu.pred.qHit:Value()), Q_RANGE2)
+    if not x then return false end
+    return Send(HK_Q, SQ, x, z)
+end
+
+local function DashAllowed(x, z, i)
+    if not UnderTurret(x, z) then
+        if CrowdAt(x, z, Menu.dash.crowd:Value()) then return false, "crowded" end
+        return true, ""
+    end
+    local rule = Menu.dash.turretRule:Value()
+    if rule == 1 then return false, "turret" end
+    if rule == 3 then return true, "dive" end
+    if S.hpPct <= Menu.dash.diveMine:Value() then return false, "my hp" end
+    local mh = EHo[i].maxHealth
+    local pct = (mh and mh > 0 and EHo[i].health / mh * 100) or 100
+    if pct > Menu.dash.diveHP:Value() then return false, "target hp" end
+    if CrowdAt(x, z, Menu.dash.crowd:Value()) then return false, "crowded" end
+    return true, "dive"
+end
+
+local function CastE(i)
+    if i == 0 or not S.eR or S.casting or SentTick[SE] == TICK then return false end
+    if EHmark[i] then
+        S.why = "marked"
         return false
     end
-
-    if node.useQ3:Value() and S.hasQ3 then
-        local bx, bz, best = nil, nil, node.q3Min:Value()
-        for i = 1, CMn do
-            if F.DistSqr(CMx[i], CMz[i], mx, mz) <= Q3_RANGE2 then
-                local c = F.CountQ3Line(CMx[i], CMz[i])
-                if c >= best then bx, bz, best = CMx[i], CMz[i], c end
-            end
-        end
-        if bx and F.CastQAt(bx, bz) then return true end
+    local d2 = EHd2[i]
+    if d2 > E_RANGE2 then return false end
+    local min = Menu.dash.minRange:Value()
+    if d2 < min * min then
+        S.why = "too close"
+        return false
     end
+    local ok, why = DashAllowed(EHx[i], EHz[i], i)
+    S.why = why
+    if not ok then return false end
+    return SendUnit(HK_E, SE, EHo[i])
+end
 
-    if node.useQ:Value() and not S.hasQ3 then
-        local bx, bz, best = nil, nil, 0
-        for i = 1, CMn do
-            if F.DistSqr(CMx[i], CMz[i], mx, mz) <= Q_RANGE2 then
-                local c = F.CountCircle(CMx[i], CMz[i], CMn, CMx, CMz)
-                if c > best then bx, bz, best = CMx[i], CMz[i], c end
-            end
-        end
-        if bx and F.CastQAt(bx, bz) then return true end
-    end
-
-    if node.useE:Value() and S.eR and not S.dashing and F.CanMove() then
-        local lastHitOnly = node.eLH:Value() == 1
-        local eRaw = F.ERawDamage()
-        for k = 1, DUn do
-            if not DUhero[k] and (not node.noETower:Value() or DUsafe[k]) then
-                local unit = DUo[k]
-                if not lastHitOnly then
-                    if F.CastE(k) then return true end
-                elseif eRaw > 0 and F.HealthAfter(unit, S.eDelay)
-                    <= F.Mitigate(unit, DMG_MAGIC, eRaw) then
-                    if F.CastE(k) then return true end
+local function CastR()
+    if not Menu.ult.use:Value() or not S.rR or S.casting or SentTick[SR] == TICK then return false end
+    if S.mode ~= 1 then return false end
+    if S.knocked < Menu.ult.count:Value() then return false end
+    local pick, bestScore = 0, -1
+    for i = 1, EHn do
+        if EHknock[i] and EHd2[i] <= R_RANGE2 then
+            local ix, iz = EHx[i], EHz[i]
+            local near = 1
+            for j = 1, EHn do
+                if j ~= i and EHknock[j] then
+                    local dx, dz = EHx[j] - ix, EHz[j] - iz
+                    if dx * dx + dz * dz <= R_CLUSTER2 then near = near + 1 end
                 end
+            end
+            local score = near * 10
+            if RDamage(i) >= EHhp[i] then score = score + 5 end
+            if score > bestScore then pick, bestScore = i, score end
+        end
+    end
+    if pick == 0 then return false end
+    return SendUnit(HK_R, SR, EHo[pick])
+end
+
+local function EnemyHandleSet()
+    if HandleTick == TICK then return EnemyHandles end
+    HandleTick = TICK
+    for k in pairs(EnemyHandles) do EnemyHandles[k] = nil end
+    for i = 1, EListN do
+        local u = EList[i]
+        local h = u and u.handle
+        if h then EnemyHandles[h] = true end
+    end
+    return EnemyHandles
+end
+
+local function WillHitMe(mx, mz, ex, ez, radius)
+    local dx, dz = ex - mx, ez - mz
+    local px, pz = S.x - mx, S.z - mz
+    local len2 = dx * dx + dz * dz
+    if len2 < 1 then
+        return px * px + pz * pz <= radius * radius
+    end
+    local t = (px * dx + pz * dz) / len2
+    if t < 0 then return false end
+    if t > 1 then t = 1 end
+    local cx = mx + dx * t - S.x
+    local cz = mz + dz * t - S.z
+    return cx * cx + cz * cz <= radius * radius
+end
+
+local function CastWAt(x, z)
+    if not S.wR or S.casting or SentTick[SW] == TICK then return false end
+    local dx, dz = x - S.x, z - S.z
+    local len = dx * dx + dz * dz
+    if len < 1 then return false end
+    len = math_sqrt(len)
+    local k = W_RANGE / len
+    return Send(HK_W, SW, S.x + dx * k, S.z + dz * k)
+end
+
+local function FindThreat()
+    if EListN == 0 then return nil end
+    local total = GameMissileCount()
+    if not total or total <= 0 or total > 20000 then return nil end
+
+    local mine = myHero.handle
+    local owners = EnemyHandleSet()
+    local blockAttacks = Menu.wall.attacks:Value()
+    local radius = MISSILE_PAD + (myHero.boundingRadius or 65) + Menu.wall.pad:Value()
+    local window = Menu.wall.window:Value()
+
+    local floorLead = W_CAST + S.lat
+
+    local bestX, bestZ, bestLead = nil, nil, math_huge
+    for i = total, 1, -1 do
+        local ms = GameMissile(i)
+        local d = ms and ms.missileData
+        if d and d.owner ~= mine and owners[d.owner] then
+            local targeted = d.target ~= nil and d.target ~= 0
+            if blockAttacks or not targeted then
+                local sp = ms.pos
+                local ep = d.endPos
+                if sp and ep then
+                    local mx, mz = sp.x, sp.z or sp.y
+                    local dx, dz = S.x - mx, S.z - mz
+                    local gap = math_sqrt(dx * dx + dz * dz)
+                    local speed = d.speed
+                    if not speed or speed <= 0 then speed = 1500 end
+                    local lead = gap / speed
+                    if lead >= floorLead and lead <= window and lead < bestLead then
+                        local ex, ez = ep.x, ep.z or ep.y
+                        if targeted or WillHitMe(mx, mz, ex, ez, radius) then
+                            bestX, bestZ, bestLead = mx, mz, lead
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return bestX, bestZ
+end
+
+local function RunWall()
+    if Menu.wall.key:Value() then
+        local m = Game.mousePos()
+        if m then return CastWAt(m.x, m.z or m.y) end
+    end
+    if not Menu.wall.auto:Value() then return false end
+    if not S.wR or S.casting or SentTick[SW] == TICK then return false end
+
+    local mx, mz = FindThreat()
+    if not mx then return false end
+
+    WallX, WallZ, WallTick = mx, mz, TICK
+
+    local dx, dz = mx - S.x, mz - S.z
+    local gap = math_sqrt(dx * dx + dz * dz)
+    if gap < 1 then return false end
+    local reach = gap * 0.6
+    if reach < 100 then reach = 100 end
+    if reach > W_RANGE then reach = W_RANGE end
+    local k = reach / gap
+    return Send(HK_W, SW, S.x + dx * k, S.z + dz * k)
+end
+
+local function KillSteal()
+    local node = Menu.ks
+    if node.useQ:Value() and S.qR then
+        for i = 1, EHn do
+            if QDamage(i) >= EHhp[i] then
+                if CastQ(i) then return true end
+            end
+        end
+    end
+    if node.useR:Value() and S.rR and S.knocked > 0 then
+        for i = 1, EHn do
+            if EHknock[i] and EHd2[i] <= R_RANGE2 and RDamage(i) >= EHhp[i] then
+                if SendUnit(HK_R, SR, EHo[i]) then return true end
             end
         end
     end
     return false
 end
 
-function F.LastHit()
-    local node = Menu.lasthit
-    local mx, mz = S.myX, S.myZ
+local function Q3Worth()
+    if not Menu.combo.q3Only:Value() then return true end
+    for i = 1, EHn do
+        if EHd2[i] <= Q3_RANGE2 then return true end
+    end
+    return false
+end
 
-    if node.useQ:Value() and not S.hasQ3 and S.qR then
-        local reach = KIT.qRange + 20
-        local rs = reach * reach
-        local qDmg = (KIT.qBase[math_max(S.qLv, 1)] or 0) + KIT.qAD * S.ad
-        for i = 1, CMn do
-            if F.DistSqr(CMx[i], CMz[i], mx, mz) <= rs then
-                if F.HealthAfter(CMo[i], S.qDelay) <= qDmg then
-                    if F.CastQAt(CMx[i], CMz[i]) then return true end
+local function Landing(ux, uz)
+    local dx, dz = ux - S.x, uz - S.z
+    local len = math_sqrt(dx * dx + dz * dz)
+    if len < 1 then return nil end
+    local k = EK.dash / len
+    return S.x + dx * k, S.z + dz * k
+end
+
+local function BestLanding(n, uo, ux, uz, tx, tz, best2, bu, bx, bz)
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local dx, dz = ux[i] - sx, uz[i] - sz
+        if dx * dx + dz * dz <= E_RANGE2 then
+            local lx, lz = Landing(ux[i], uz[i])
+            if lx then
+                local ex, ez = tx - lx, tz - lz
+                local d2 = ex * ex + ez * ez
+                if d2 < best2 then
+                    local u = uo[i]
+                    if not Marked(u) then
+                        best2, bu, bx, bz = d2, u, lx, lz
+                    end
                 end
             end
         end
     end
+    return best2, bu, bx, bz
+end
 
-    if node.useE:Value() and S.eR and not S.dashing and F.CanMove() then
-        local eRaw = F.ERawDamage()
-        for k = 1, DUn do
-            if not DUhero[k] and (not node.noETower:Value() or DUsafe[k]) then
-                local unit = DUo[k]
-                if eRaw > 0 and F.HealthAfter(unit, S.eDelay)
-                    <= F.Mitigate(unit, DMG_MAGIC, eRaw) then
-                    if F.CastE(k) then return true end
-                end
+local function GapClose(i)
+    local node = Menu.combo
+    if not node.gap:Value() then return false end
+    if not S.eR or S.casting or SentTick[SE] == TICK then return false end
+    if JMn == 0 and CMn == 0 then return false end
+
+    local now2 = EHd2[i]
+    local reach = node.gapMax:Value()
+    if now2 > reach * reach then return false end
+    if now2 <= E_RANGE2 then return false end
+
+    local tx, tz = EHx[i], EHz[i]
+    local best2, bu, bx, bz = now2, nil, nil, nil
+    best2, bu, bx, bz = BestLanding(CMn, CMo, CMx, CMz, tx, tz, best2, bu, bx, bz)
+    best2, bu, bx, bz = BestLanding(JMn, JMo, JMx, JMz, tx, tz, best2, bu, bx, bz)
+    if not bu then return false end
+
+    if math_sqrt(now2) - math_sqrt(best2) < node.gapGain:Value() then return false end
+
+    local ok, why = DashAllowed(bx, bz, i)
+    S.why = why
+    if not ok then return false end
+    return SendUnit(HK_E, SE, bu)
+end
+
+local function RunCombo()
+    local node = Menu.combo
+
+    if node.useE:Value() then
+        local e = Target(E_RANGE, E_RANGE2)
+        if e ~= 0 and CastE(e) then
+            if node.eQ:Value() and S.qR then
+                local q = Target(Q_RANGE, Q_RANGE2)
+                if q ~= 0 then CastQ(q) end
+            end
+            return
+        end
+        local far = S.ti
+        if far ~= 0 and GapClose(far) then return end
+    end
+
+    if S.hasQ3 then
+        if node.useQ3:Value() and Q3Worth() then
+            local q3 = Target(Q3_RANGE, Q3_RANGE2)
+            if q3 ~= 0 and CastQ(q3) then return end
+        end
+        return
+    end
+
+    if node.useQ:Value() then
+        local q = Target(Q_RANGE, Q_RANGE2)
+        if q ~= 0 and CastQ(q) then return end
+    end
+end
+
+local function QFarmReady()
+    return S.qR and not S.casting and SentTick[SQ] ~= TICK
+end
+
+local function BestArc(n, xs, zs)
+    local reach = Q_RANGE + FARM_SLACK
+    local reach2 = reach * reach
+    local sx, sz = S.x, S.z
+    local bx, bz, best = nil, nil, 0
+    for i = 1, n do
+        local dx, dz = xs[i] - sx, zs[i] - sz
+        if dx * dx + dz * dz <= reach2 then
+            local c = CountArc(xs[i], zs[i], n, xs, zs)
+            if c > best then bx, bz, best = xs[i], zs[i], c end
+        end
+    end
+    return bx, bz, best
+end
+
+local function BestLine(n, xs, zs, brs, least)
+    local bx, bz, best = nil, nil, least
+    for i = 1, n do
+        local c = CountLine(xs[i], zs[i], n, xs, zs, brs)
+        if c >= best then bx, bz, best = xs[i], zs[i], c end
+    end
+    return bx, bz
+end
+
+local function StackQ()
+    if not QFarmReady() or S.hasQ3 then return false end
+    local bx, bz = BestArc(JMn, JMx, JMz)
+    if not bx then bx, bz = BestArc(CMn, CMx, CMz) end
+    if not bx then return false end
+    return Send(HK_Q, SQ, bx, bz)
+end
+
+local function FarmQ(useQ3, useQ, q3Min)
+    if not QFarmReady() then return false end
+    if S.hasQ3 then
+        if not useQ3 then return false end
+        local bx, bz = BestLine(JMn, JMx, JMz, JMbr, 1)
+        if not bx then bx, bz = BestLine(CMn, CMx, CMz, CMbr, q3Min) end
+        if not bx then return false end
+        return Send(HK_Q, SQ, bx, bz)
+    end
+    if not useQ then return false end
+    local bx, bz = BestArc(JMn, JMx, JMz)
+    if not bx then bx, bz = BestArc(CMn, CMx, CMz) end
+    if not bx then return false end
+    return Send(HK_Q, SQ, bx, bz)
+end
+
+local function EKills(unit)
+    local raw = S.eRaw
+    if raw <= 0 then return false end
+    return HealthAfter(unit, S.eDelay) <= raw * MagicMul(unit.magicResist)
+end
+
+local function SweepE(n, uo, ux, uz, killOnly)
+    local sx, sz = S.x, S.z
+    for i = 1, n do
+        local dx, dz = ux[i] - sx, uz[i] - sz
+        if dx * dx + dz * dz <= E_RANGE2 then
+            local u = uo[i]
+            if (not killOnly or EKills(u)) and not Marked(u) then
+                if SendUnit(HK_E, SE, u) then return true end
             end
         end
     end
     return false
 end
 
-function F.Flee()
+local function FarmE(mode)
+    if mode == 1 or not S.eR or S.casting or SentTick[SE] == TICK then return false end
+    local killOnly = mode == 3
+    if SweepE(JMn, JMo, JMx, JMz, killOnly) then return true end
+    return SweepE(CMn, CMo, CMx, CMz, killOnly)
+end
+
+local function RunClear()
+    local node = Menu.clear
+    if FarmE(node.eMode:Value()) then return end
+    if FarmQ(node.useQ3:Value(), node.useQ:Value(), node.q3Min:Value()) then return end
+end
+
+local function RunLastHit()
+    if Menu.lasthit.useE:Value() and FarmE(3) then return end
+    if not Menu.lasthit.useQ:Value() or not QFarmReady() or S.hasQ3 then return end
+    local dmg = S.qRaw
+    if dmg <= 0 then return end
+    local reach = Q_RANGE + FARM_SLACK
+    local reach2 = reach * reach
+    local sx, sz = S.x, S.z
+    for i = 1, CMn do
+        local dx, dz = CMx[i] - sx, CMz[i] - sz
+        if dx * dx + dz * dz <= reach2 then
+            local u = CMo[i]
+            if HealthAfter(u, S.qDelay) <= dmg * PhysMul(u.armor) then
+                if Send(HK_Q, SQ, CMx[i], CMz[i]) then return end
+            end
+        end
+    end
+end
+
+local function RunFlee()
     local node = Menu.flee
-    if node.useE:Value() and S.eR and not S.dashing then
-        local mx, mz = F.MouseXZ()
-        if mx then
-            local k, d2 = F.BestEToCursor(node.noETower:Value())
-            if k ~= 0 and d2 < F.DistSqr(S.myX, S.myZ, mx, mz) then
-                if F.CastE(k) then return true end
-            end
-        end
+    if not node.useE:Value() then return end
+    if not S.eR or S.casting or SentTick[SE] == TICK then return end
+    local m = Game.mousePos()
+    if not m then return end
+    local mx, mz = m.x, m.z or m.y
+    local dx, dz = mx - S.x, mz - S.z
+    local best2, bu, bx, bz = dx * dx + dz * dz, nil, nil, nil
+    best2, bu, bx, bz = BestLanding(CMn, CMo, CMx, CMz, mx, mz, best2, bu, bx, bz)
+    best2, bu, bx, bz = BestLanding(JMn, JMo, JMx, JMz, mx, mz, best2, bu, bx, bz)
+    if node.heroes:Value() then
+        best2, bu, bx, bz = BestLanding(EHn, EHo, EHx, EHz, mx, mz, best2, bu, bx, bz)
     end
-    if node.useQ3:Value() and S.hasQ3 then
-        local i = F.Target(KIT.q3Range)
-        if i ~= 0 and F.CastQ3(i, F.HitChanceOf(Menu.pred.hcQ3:Value())) then return true end
-    end
-    if node.useQ:Value() and not S.hasQ3 then
-        local i = F.Target(KIT.qRange)
-        if i ~= 0 and F.CastQ(i, F.HitChanceOf(Menu.pred.hcQ:Value())) then return true end
-        return F.StackQ()
-    end
-    return false
+    if not bu then return end
+    if node.noTurret:Value() and UnderTurret(bx, bz) then return end
+    SendUnit(HK_E, SE, bu)
 end
 
-function F.WallJump()
-    if not S.eR or S.dashing then return false end
-    local mx, mz = F.MouseXZ()
-    if mx == nil then return false end
-    local reach = Menu.walljump.range:Value()
-    local reachSqr = reach * reach
-    local allowPush = Menu.walljump.push:Value()
-    local bestIdx, bestDistSqr, bestRank = 0, 0, 3
-    for k = 1, DUn do
-        local rank = DUwall[k]
-        if rank and (rank == 1 or allowPush) then
-            local d2 = F.DistSqr(DUx[k], DUz[k], mx, mz)
-            if d2 <= reachSqr and (rank < bestRank or (rank == bestRank and d2 < bestDistSqr)) then
-                bestIdx, bestDistSqr, bestRank = k, d2, rank
-            end
-        end
+local function RunHarass()
+    local node = Menu.harass
+    if node.useQ:Value() and (S.hasQ3 or not node.q3Only:Value()) then
+        local i = (S.hasQ3 and Target(Q3_RANGE, Q3_RANGE2)) or Target(Q_RANGE, Q_RANGE2)
+        if i ~= 0 and CastQ(i) then return end
     end
-    if bestIdx == 0 then return false end
-    return F.CastEAimed(bestIdx)
+    if node.stackQ:Value() then StackQ() end
 end
-
-function F.WindWall()
-    local node = Menu.windwall
-    local logMiss = Menu.debug.missNames:Value() == true
-    local canCast = node.enable:Value() == true and S.wR and SentTick[SW] ~= TICK
-        and not (node.onlyCombo:Value() and S.mode ~= MODE_COMBO)
-    if not canCast and not logMiss then return false end
-
-    local minThreat = node.minThreat:Value()
-    local lowHp = S.hpPct * 100 < node.hpSafe:Value()
-    local bestThreat, bestX, bestZ = 0, nil, nil
-    local scanSqr = 2800 * 2800
-    local hitBase = S.br * 1.3
-    local mx, mz = S.myX, S.myZ
-
-    if MissileSeen > LIM.partMemoCap then
-        MissileThreat = {}
-        MissileSeen = 0
-    end
-
-    local count = (GameMissileCount and GameMissileCount()) or 0
-    for i = 1, count do
-        local m = GameMissile(i)
-        if m and m.valid and m.isEnemy then
-            local mp = m.pos
-            if mp and F.DistSqr(mp.x, mp.z, mx, mz) < scanSqr then
-                local id = m.networkID
-                local rank
-                if id ~= nil then rank = MissileThreat[id] end
-                if rank == nil then
-                    local nm = m.name
-                    rank = DANGER[nm] or false
-                    if id ~= nil then
-                        MissileThreat[id] = rank
-                        MissileSeen = MissileSeen + 1
-                    end
-                    if not rank and logMiss and type(nm) == "string" and nm ~= ""
-                        and MEMO.missSeen[nm] == nil then
-                        if MEMO.missN > LIM.nameLogCap then
-                            MEMO.missSeen = {}
-                            MEMO.missN = 0
-                        end
-                        MEMO.missSeen[nm] = true
-                        MEMO.missN = MEMO.missN + 1
-                        print(string_format("[%s] MISSILE %q from %s", SCRIPT_NAME, nm,
-                            F.PartOwnerLabel(mp.x, mp.z) or "far"))
-                    end
-                end
-                if rank then
-                    local threat = rank + (lowHp and 3 or 0)
-                    local gate = node.spells[m.name]
-                    if (not gate or gate:Value()) and threat > bestThreat
-                        and (threat >= minThreat or lowHp) then
-                        local a, b = m.startPos, m.endPos
-                        if a and b then
-                            local jx, jz, onSeg = F.ProjectOnSegment(a.x, a.z, b.x, b.z, mx, mz)
-                            if onSeg and (jx - mp.x) * (b.x - a.x) + (jz - mp.z) * (b.z - a.z) > 0 then
-                                local reach = (m.width or 70) * 0.5 + hitBase
-                                if F.DistSqr(mx, mz, jx, jz) < reach * reach then
-                                    bestThreat, bestX, bestZ = threat, mp.x, mp.z
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    for i = 1, EHn do
-        if EHd[i] * EHd[i] < scanSqr then
-            local spell = EHo[i].activeSpell
-            if spell and spell.valid == true then
-                local rank = DANGER[spell.name]
-                if rank then
-                    local threat = rank + (lowHp and 3 or 0)
-                    local gate = node.spells[spell.name]
-                    if (not gate or gate:Value()) and threat > bestThreat
-                        and (threat >= minThreat or lowHp) then
-                        local hit = false
-                        local tgt = spell.target
-                        if tgt ~= nil and (tgt == myHero or tgt == myHero.handle
-                            or tgt == myHero.networkID) then
-                            hit = true
-                        else
-                            local sp = spell.startPos
-                            local ep = spell.toPos or spell.placementPos
-                            local sx = (sp and sp.x) or EHx[i]
-                            local sz = (sp and sp.z) or EHz[i]
-                            local ex = (ep and ep.x) or mx
-                            local ez = (ep and ep.z) or mz
-                            if F.DistSqr(ex, ez, EHx[i], EHz[i]) < 2500 then
-                                ex, ez = mx, mz
-                            end
-                            local jx, jz, onSeg = F.ProjectOnSegment(sx, sz, ex, ez, mx, mz)
-                            if onSeg then
-                                local reach = (spell.width or 100) * 0.5 + hitBase
-                                hit = F.DistSqr(mx, mz, jx, jz) < reach * reach
-                            end
-                        end
-                        if hit then bestThreat, bestX, bestZ = threat, EHx[i], EHz[i] end
-                    end
-                end
-            end
-        end
-    end
-
-    if bestX == nil or not canCast then return false end
-    return F.SendAt(HKW, SW, bestX, bestZ)
-end
-
-function F.DumpUnit(who, unit, everything)
-    local total = unit.buffCount
-    local p = unit.pos
-    local br = unit.boundingRadius or 60
-    print(string_format("[%s] %s nID=%s buffCount=%s marked=%s byPart=%s", SCRIPT_NAME,
-        who, tostring(unit.networkID), tostring(total),
-        tostring(F.MarkedByE(unit, p.x, p.z, br)),
-        tostring(F.MarkedByParticle(p.x, p.z, br))))
-    if type(total) ~= "number" then return end
-    for i = 0, total - 1 do
-        local b = unit:GetBuff(i)
-        if b then
-            local n = b.name
-            local nt = type(n)
-            local nlen = (nt == "string" and #n) or -1
-            local key = who .. "|" .. i .. "|" .. tostring(n) .. "|" .. tostring(b.type)
-            if everything or not seenBuff[key] then
-                if seenBuffN > LIM.nameLogCap then
-                    seenBuff = {}
-                    seenBuffN = 0
-                end
-                seenBuff[key] = true
-                seenBuffN = seenBuffN + 1
-                print(string_format(
-                    "[%s]   [%d] name=%q nt=%s len=%d count=%s stacks=%s type=%s srcName=%s srcID=%s",
-                    SCRIPT_NAME, i, tostring(n), nt, nlen, tostring(b.count), tostring(b.stacks),
-                    tostring(b.type), tostring(b.sourceName), tostring(b.sourcenID)))
-            end
-        end
-    end
-end
-
-function F.DumpParticles()
-    if type(Game.ParticleCount) ~= "function" or type(Game.Particle) ~= "function" then
-        print("[" .. SCRIPT_NAME .. "] particle API missing")
-        return
-    end
-    local total = Game.ParticleCount()
-    if type(total) ~= "number" or total <= 0 then
-        print("[" .. SCRIPT_NAME .. "] ParticleCount=" .. tostring(total))
-        return
-    end
-    print(string_format("[%s] ParticleCount=%d", SCRIPT_NAME, total))
-    if total > LIM.particleCap then total = LIM.particleCap end
-    local near = 0
-    for i = 1, total do
-        local p = Game.Particle(i)
-        if p and p.pos then
-            local who = F.PartOwnerLabel(p.pos.x, p.pos.z)
-            if who then
-                near = near + 1
-                print(string_format("[%s]   PART on %s name=%q type=%s code=%d", SCRIPT_NAME,
-                    who, tostring(p.name), tostring(p.type), F.ClassifyParticle(p.name)))
-            end
-        end
-    end
-    print(string_format("[%s] particles near units: %d", SCRIPT_NAME, near))
-end
-
-function F.Debug()
-    local node = Menu.debug
-    local key = node.dumpKey:Value() == true
-    local edge = key and not dumpHeld
-    dumpHeld = key
-    if not edge and not node.watch:Value() then return end
-
-    for i = 1, EHn do
-        if EHd[i] <= 1200 then F.DumpUnit(EHo[i].charName or "enemy", EHo[i], edge) end
-    end
-    for k = 1, DUn do
-        local u = DUo[k]
-        F.DumpUnit(tostring(u.charName or u.name or "unit"), u, edge)
-    end
-    if not edge then return end
-
-    print(string_format("[%s] SELF nID=%s charName=%s dashCands=%d eMarks=%d eR=%s eCd=%.2f canUseE=%s dashing=%s",
-        SCRIPT_NAME, tostring(myHero.networkID), tostring(myHero.charName),
-        DUn, EMn, tostring(S.eR), S.eCd, tostring(GameCanUseSpell(SE)), tostring(S.dashing)))
-    local q = myHero:GetSpellData(SQ)
-    print(string_format("[%s] QDATA name=%s ammo=%s ammoTime=%s ammoCd=%s ammoCurrentCd=%s toggle=%s",
-        SCRIPT_NAME, tostring(q.name), tostring(q.ammo), tostring(q.ammoTime),
-        tostring(q.ammoCd), tostring(q.ammoCurrentCd), tostring(q.toggleState)))
-    print(string_format("[%s] SELFFLAGS shield=%s qStacks=%s eRamp=%s shieldPart=%s qPart=%s ePart=%s",
-        SCRIPT_NAME, tostring(S.shield), tostring(S.qStacks), tostring(S.eRampStacks),
-        tostring(S.shieldPart), tostring(S.qStackPart), tostring(S.eRampPart)))
-    F.DumpUnit("MYSELF", myHero, true)
-    if node.particles:Value() then F.DumpParticles() end
-end
-
-function F.OnTick()
-    TICK = TICK + 1
-    NOW = GameTimer()
-
-    F.RestoreCursor()
-    if qHeld then F.ReleaseQ() end
-
-    if F.ShouldWait() then
-        wjDraw = false
-        F.AllowAttack(true)
-        return
-    end
-
-    F.SyncSelf()
-    F.SyncMinions()
-    F.SyncEnemies()
-    F.ScanParticles()
-    F.SyncMarks()
-    F.SyncTurrets()
-
-    local wjHeld = Menu.walljump.key:Value() == true and S.eR and not S.dashing
-    local wjShow = not S.dashing and Menu.walljump.draw:Value() and Menu.draw.eDashPos:Value()
-    wjDraw = wjHeld or wjShow
-    F.SyncDashTargets(wjDraw)
-
-    F.Debug()
-    F.WindWall()
-
-    if F.DashQ() then return end
-    if wjHeld and F.WallJump() then return end
-
-    local mode = S.mode
-    if mode == MODE_NONE then return end
-
-    if mode == MODE_COMBO then
-        if F.Ultimate() then return end
-        if F.Airblade() then return end
-        F.Combo()
-    elseif mode == MODE_HARASS then
-        F.Harass()
-    elseif mode == MODE_CLEAR then
-        F.Clear()
-    elseif mode == MODE_LASTHIT then
-        F.LastHit()
-    elseif mode == MODE_FLEE then
-        F.Flee()
-    end
-end
-
-local DrawColor = Draw.Color
-local DrawCircle = Draw.Circle
-local DrawText = Draw.Text
-
-local COL_Q = DrawColor(80, 255, 255, 255)
-local COL_Q3 = DrawColor(80, 255, 100, 100)
-local COL_E = DrawColor(80, 100, 255, 100)
-local COL_EGAP = DrawColor(50, 100, 200, 255)
-local COL_R = DrawColor(50, 255, 200, 50)
-local COL_SHIELD = DrawColor(255, 50, 200, 255)
-local COL_KILL = DrawColor(255, 255, 30, 30)
-local COL_WALL = DrawColor(200, 255, 0, 255)
-local COL_PUSH = DrawColor(200, 255, 170, 0)
-local COL_DASH = DrawColor(90, 150, 150, 150)
-local COL_UNSAFE = DrawColor(180, 255, 0, 0)
-
-local COL_BG = DrawColor(180, 10, 10, 15)
-local COL_BORD = DrawColor(255, 200, 50, 50)
-local COL_RDY = DrawColor(255, 50, 255, 50)
-local COL_CD = DrawColor(255, 255, 80, 80)
-local COL_OFF = DrawColor(255, 130, 130, 130)
-local COL_MARK = DrawColor(255, 255, 80, 255)
-local COL_FLOW = DrawColor(255, 255, 255, 0)
-local COL_FLOWON = DrawColor(255, 0, 255, 0)
 
 local PC = {
-    tick = -1,
-    res = false,
-    x = 810,
-    y = 870,
-    marked = -1,
-    markText = "MARK 0",
-    flowText = "FLOW 0",
-    flowRaw = -2,
-    shield = false,
+    res = false, x = 810, y = 870,
     cdText = { "Q", "W", "E", "R" },
     cdReady = { false, false, false, false },
-    cdKey = { -9, -9, -9, -9 },
-    cdName = { "Q", "W", "E", "R" },
+    lastCd = {}, lastLv = {},
 }
 
-local DashPos = { x = 0, y = 0, z = 0 }
-
-function F.PanelCell(i, name, cd, ready)
-    PC.cdReady[i] = ready
-    local key
-    if ready then
-        key = -1
-    else
-        local sane = type(cd) == "number" and cd == cd and cd >= 0 and cd < 1000
-        key = (sane and math_floor(cd * 10)) or -2
+local function PanelCell(i, cd, ready, lv)
+    PC.cdReady[i] = false
+    if lv == 0 then
+        if PC.lastLv[i] ~= 0 then
+            PC.lastLv[i] = 0
+            PC.lastCd[i] = -1
+            PC.cdText[i] = PANEL_NAMES[i] .. " --"
+        end
+        return
     end
-    if PC.cdKey[i] == key and PC.cdName[i] == name then return end
-    PC.cdKey[i] = key
-    PC.cdName[i] = name
+    PC.lastLv[i] = lv
     if ready then
-        PC.cdText[i] = name .. " RDY"
-    elseif key == -2 then
-        PC.cdText[i] = name .. " ..."
-    else
-        PC.cdText[i] = string_format("%s %.1f", name, cd)
+        PC.cdReady[i] = true
+        if PC.lastCd[i] ~= 0 then
+            PC.lastCd[i] = 0
+            PC.cdText[i] = PANEL_NAMES[i] .. " RDY"
+        end
+        return
+    end
+    local sane = type(cd) == "number" and cd == cd and cd > 0 and cd < 1000
+    local tenth = (sane and math_floor(cd * 10)) or -2
+    if PC.lastCd[i] ~= tenth then
+        PC.lastCd[i] = tenth
+        PC.cdText[i] = (sane and string_format("%s %.1f", PANEL_NAMES[i], cd)) or (PANEL_NAMES[i] .. " ...")
     end
 end
 
-function F.DrawPanel()
+local function DrawPanel()
     if not PC.res then
         PC.res = true
-        local res = GameResolution and GameResolution()
+        local res = Game.Resolution and Game.Resolution()
         if res and res.x and res.y then
             PC.x = res.x / 2 - 150
             PC.y = res.y - 210
         end
     end
 
-    if PC.tick ~= TICK then
-        PC.tick = TICK
-
-        local marked = 0
-        for i = 1, EHn do
-            if EHmark[i] then marked = marked + 1 end
-        end
-        if marked ~= PC.marked then
-            PC.marked = marked
-            PC.markText = string_format("MARK %d", marked)
-        end
-
-        local flowRaw = (S.shield and -1) or math_floor(S.flowPct)
-        if flowRaw ~= PC.flowRaw then
-            PC.flowRaw = flowRaw
-            PC.flowText = (S.shield and "SHIELD") or string_format("FLOW %d", flowRaw)
-        end
-        PC.shield = S.shield
-
-        F.PanelCell(1, (S.hasQ3 and "Q3") or "Q", S.qCd, S.qR)
-        F.PanelCell(2, "W", S.wCd, S.wR)
-        F.PanelCell(3, "E", S.eCd, S.eR)
-        F.PanelCell(4, "R", S.rCd, S.rR)
-    end
+    PanelCell(1, S.qCd, S.qR, S.qLv)
+    PanelCell(2, S.wCd, S.wR, S.wLv)
+    PanelCell(3, S.eCd, S.eR, S.eLv)
+    PanelCell(4, S.rCd, S.rR, S.rLv)
 
     local x, y = PC.x, PC.y
-
     if Draw.Rect then
         Draw.Rect(x, y, 300, 56, COL_BG)
         Draw.Rect(x, y, 300, 2, COL_BORD)
     end
 
-    local wallOn = Menu.windwall.enable:Value() == true
-    local wallCol = (wallOn and COL_RDY) or COL_OFF
-    DrawText("WALL", 12, x + 10, y + 8, wallCol)
-    DrawText((wallOn and "ON") or "off", 12, x + 62, y + 8, wallCol)
-    DrawText(PC.markText, 12, x + 110, y + 8, (PC.marked > 0 and COL_MARK) or COL_OFF)
-    DrawText(PC.flowText, 12, x + 200, y + 8, (PC.shield and COL_FLOWON) or COL_FLOW)
+    local tempest = (S.hasQ3 and "TORNADO") or string_format("Q %d/2", S.qStacks)
+    DrawText(tempest, 12, x + 10, y + 8, (S.hasQ3 and COL_Q3) or COL_OFF)
+    if S.knocked > 0 then
+        DrawText(string_format("AIR %d", S.knocked), 12, x + 110, y + 8, COL_RDY)
+    end
+    if S.why ~= "" then
+        DrawText(S.why, 12, x + 190, y + 8, COL_OFF)
+    end
 
     for i = 1, 4 do
-        DrawText(PC.cdText[i], 12, x + 10 + (i - 1) * 72, y + 32,
-            (PC.cdReady[i] and COL_RDY) or COL_CD)
+        DrawText(PC.cdText[i], 12, x + 10 + (i - 1) * 72, y + 32, (PC.cdReady[i] and COL_RDY) or COL_CD)
     end
 end
 
-function F.OnDraw()
-    if myHero.dead then return end
-    local node = Menu.draw
-    if not node.enable:Value() then return end
-
-    if node.panel:Value() then F.DrawPanel() end
+local function OnDraw()
+    local draw = Menu.draw
+    if myHero.dead or not draw.enable:Value() then return end
+    if draw.panel:Value() then DrawPanel() end
     if not myHero.visible then return end
+    local pos = myHero.pos
 
-    local hasQ3 = S.hasQ3
-    local wantQ = node.qRange:Value() and not hasQ3
-    local wantQ3 = node.q3Range:Value() and hasQ3
-    local wantE = node.eRange:Value()
-    local wantGap = node.eGap:Value()
-    local wantR = node.rRange:Value()
-
-    if wantQ or wantQ3 or wantE or wantGap or wantR then
-        local pos = myHero.pos
-        if wantQ then DrawCircle(pos, KIT.qRange, 1, COL_Q) end
-        if wantQ3 then DrawCircle(pos, KIT.q3Range, 1, COL_Q3) end
-        if wantE then DrawCircle(pos, KIT.eRange, 1, COL_E) end
-        if wantGap then DrawCircle(pos, Menu.combo.eGapRange:Value(), 1, COL_EGAP) end
-        if wantR then DrawCircle(pos, KIT.rRange, 1, COL_R) end
-    end
-
-    if node.eDashPos:Value() then
-        for k = 1, DUn do
-            local rank = DUwall[k]
-            local col = (rank == 1 and COL_WALL) or (rank == 2 and COL_PUSH)
-                or (DUsafe[k] and COL_DASH) or COL_UNSAFE
-            DashPos.x, DashPos.y, DashPos.z = DUx[k], S.myY, DUz[k]
-            DrawCircle(DashPos, 55, 2, col)
-        end
-    elseif wjDraw and Menu.walljump.draw:Value() then
-        for k = 1, DUn do
-            local rank = DUwall[k]
-            if rank then
-                DashPos.x, DashPos.y, DashPos.z = DUx[k], S.myY, DUz[k]
-                DrawCircle(DashPos, 55, 2, (rank == 2 and COL_PUSH) or COL_WALL)
-            end
+    if draw.qRange:Value() then
+        if S.hasQ3 then
+            DrawCircle(pos, Q3_RANGE, 1, COL_Q3)
+        else
+            DrawCircle(pos, Q_RANGE, 1, COL_Q)
         end
     end
+    if draw.eRange:Value() then DrawCircle(pos, E_RANGE, 1, COL_E) end
+    if draw.rRange:Value() then DrawCircle(pos, R_RANGE, 1, COL_R) end
 
-    if node.killable:Value() then
+    if draw.wall:Value() and WallTick >= 0 and TICK - WallTick < 60 then
+        Pos.x, Pos.y, Pos.z = WallX, S.y, WallZ
+        DrawCircle(Pos, 90, 2, COL_MARK)
+    end
+
+    if draw.marks:Value() then
         for i = 1, EHn do
-            if not EHinvuln[i] then
-                local p2 = EHo[i].pos2D
-                if p2 ~= nil and p2.onScreen == true and F.Killable(i) then
-                    DrawText("KILL", 22, p2.x - 18, p2.y - 36, COL_KILL)
+            if EHd2[i] <= E_RANGE2 then
+                local u = EHo[i]
+                local p = u.pos2D
+                if p and p.onScreen then
+                    DrawCircle(u.pos, (u.boundingRadius or 65) + 15, 2,
+                        (EHmark[i] and COL_MARK) or COL_FREE)
                 end
             end
         end
     end
+end
 
-    local wantFlow = node.flow:Value()
-    local wantStacks = node.qStacks:Value() and not hasQ3
-    if wantFlow or wantStacks then
-        local p2 = myHero.pos2D
-        if p2 and p2.onScreen then
-            if wantFlow then
-                local txt = (S.shield and "SHIELD") or string_format("%d%%", S.flowPct)
-                DrawText(txt, 18, p2.x - 20, p2.y + 24, COL_SHIELD)
-            end
-            if wantStacks then
-                DrawText("Q " .. S.qStacks .. "/2", 18, p2.x - 16, p2.y + 44, COL_Q3)
-            end
-        end
+local function OnTick()
+    RestoreCursor()
+    if myHero.dead then return end
+    TICK = TICK + 1
+    InitPred()
+    BuildLists()
+    SyncSelf()
+    SyncEnemies()
+    SyncMinions()
+
+    if GameIsChatOpen() then return end
+
+    if RunWall() then return end
+
+    if S.casting then return end
+
+    if CastR() then return end
+    if KillSteal() then return end
+
+    if S.mode == 1 then
+        RunCombo()
+    elseif S.mode == 2 then
+        RunHarass()
+    elseif S.mode == 3 then
+        RunClear()
+    elseif S.mode == 4 then
+        RunLastHit()
+    elseif S.mode == 5 then
+        RunFlee()
     end
 end
 
-function F.Guard(fn, tag)
+local function Guard(fn, tag)
     local lk = _G.Lowkey
     if lk and lk.Guard then return lk:Guard(SCRIPT_NAME, fn, tag) end
     local seen = {}
@@ -2579,20 +1367,24 @@ function F.Guard(fn, tag)
     end
 end
 
-function F.Hook()
-    local onTick = F.Guard(F.OnTick, "tick")
-    local onDraw = F.Guard(F.OnDraw, "draw")
+local function Hook()
+    local onTick = Guard(OnTick, "tick")
+    local onDraw = Guard(OnDraw, "draw")
     local sdk = _G.SDK
-    if sdk and sdk.OnTick and sdk.OnDraw then
-        sdk.OnTick[#sdk.OnTick + 1] = onTick
-        sdk.OnDraw[#sdk.OnDraw + 1] = onDraw
-        return "sdk"
+    local ticks = sdk and sdk.OnTick
+    local draws = sdk and sdk.OnDraw
+    if type(ticks) == "table" and type(draws) == "table" then
+        ticks[#ticks + 1] = onTick
+        draws[#draws + 1] = onDraw
+        return "SDK"
     end
     Callback.Add("Tick", onTick)
     Callback.Add("Draw", onDraw)
     return "raw"
 end
 
-local how = F.Hook()
-print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | wall " ..
-    tostring(_G.MapPosition ~= nil) .. " | hook " .. how)
+local HOOK = Hook()
+
+InitPred()
+print("[" .. SCRIPT_NAME .. "] v" .. VERSION .. " loaded | pred "
+    .. ((PredQ and "on") or "waiting") .. " | hook " .. HOOK)
