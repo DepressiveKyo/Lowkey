@@ -317,6 +317,7 @@ local function BuildMenu()
     root.draws:MenuElement({ id = "mode", name = "Active mode", value = true })
     root.draws:MenuElement({ id = "profile", name = "Frame cost (ms per section)", value = false })
     root.draws:MenuElement({ id = "errors", name = "Script errors", value = true })
+    root.draws:MenuElement({ id = "units", name = "Per-unit markers (costs frames)", value = false })
 
     root:MenuElement({ name = "", type = SPACE, id = "gap" })
     root:MenuElement({
@@ -2502,7 +2503,8 @@ function Walker:OnDraw()
     if d.cursor:Value() then
         Draw.Circle(MousePos(), 120, 1, Palette.cursor)
     end
-    if d.enemyRange:Value() then
+    local units = d.units:Value()
+    if units and d.enemyRange:Value() then
         local mx, mz = pos.x, pos.z
         for i = 1, World.enemyN do
             local u = World.enemy[i]
@@ -2523,7 +2525,7 @@ function Walker:OnDraw()
             Draw.Circle(c.pos, 140, 2, Palette.selected)
         end
     end
-    if d.farm:Value() then
+    if units and d.farm:Value() then
         for i = 1, Farm.minionN do
             local kill = Farm.killable[i]
             local near = kill or Farm.nearly[i]
