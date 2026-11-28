@@ -110,7 +110,7 @@ local TurX, TurZ = {}, {}
 local TurN = 0
 local TurTick = -1
 
-local TgtRange, TgtIdx, TgtTick = -1, 0, -1
+local TgtTick, TgtCache = -1, {}
 
 local PredQ, PredE = nil, nil
 local Pos = { x = 0, y = 0, z = 0 }
@@ -352,13 +352,15 @@ local function SyncEnemies()
 
     for i = n + 1, prev do EHo[i] = nil end
     EHn = n
-    TgtTick = -1
 end
 
 local function Target(range, range2)
-    if TgtTick == TICK and TgtRange == range then return TgtIdx end
-    TgtTick, TgtRange = TICK, range
-    TgtIdx = 0
+    if TgtTick ~= TICK then
+        TgtTick = TICK
+        for k in pairs(TgtCache) do TgtCache[k] = nil end
+    end
+    local hit = TgtCache[range]
+    if hit then return hit end
 
     local sdk = _G.SDK
     local ts = sdk and sdk.TargetSelector
@@ -368,8 +370,8 @@ local function Target(range, range2)
             local id = t.networkID
             for i = 1, EHn do
                 if EHo[i].networkID == id and EHd2[i] <= range2 then
-                    TgtIdx = i
-                    return TgtIdx
+                    TgtCache[range] = i
+                    return i
                 end
             end
         end
@@ -382,8 +384,8 @@ local function Target(range, range2)
             best, bestD = i, d2
         end
     end
-    TgtIdx = best
-    return TgtIdx
+    TgtCache[range] = best
+    return best
 end
 
 local function EnemyTurrets()
@@ -391,6 +393,19 @@ local function EnemyTurrets()
     TurTick = TICK
     TurN = 0
     local sdk = _G.SDK
+    local w = sdk and sdk.Snapshot
+    if w and w.turret and w.turretN then
+        local list, total = w.turret, w.turretN
+        for i = 1, total do
+            local t = list[i]
+            local p = t and t.pos
+            if p then
+                TurN = TurN + 1
+                TurX[TurN], TurZ[TurN] = p.x, p.z or p.y
+            end
+        end
+        return
+    end
     local om = sdk and sdk.ObjectManager
     if not om or not om.GetEnemyTurrets then return end
     local ok, list = pcall(om.GetEnemyTurrets, om, 3000)

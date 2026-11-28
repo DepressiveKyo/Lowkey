@@ -1,8 +1,8 @@
 return {
     api = 1,
-    version = "2026.11.28.1428",
+    version = "2026.11.28.1440",
     scripts = {
-        ["Akali"] = { file = "scripts/champions/Akali.lua", bytes = 32685, sha256 = "11a23898877c57ff4d90d47e3cfb75f85227aa4c2f7b04af82aa7b13dc9d7d7b", champion = "Akali" },
+        ["Akali"] = { file = "scripts/champions/Akali.lua", bytes = 33107, sha256 = "51e26a61f141598f3a04661e9a372f9d9944d92b3fc2f45059f9cbcd60dff237", champion = "Akali" },
         ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 27841, sha256 = "adcc5954eb007bb2a8694cac91682f715bf8919144b6dbd5cb41a778458f89a9", champion = "Draven" },
         ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24351, sha256 = "78ba1ed79882aa10544351bc1cb33dc1d0b1fd9d114a9ce67d6a39438898fd52", champion = "Lillia" },
         ["LowkeyChampions"] = { file = "scripts/core/LowkeyChampions.lua", bytes = 27361, sha256 = "5f9280092af808452caca394ad925930eed2f69d574d4e18944cf37d0f9d0267", order = 20 },
