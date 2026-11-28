@@ -151,8 +151,14 @@ Menu.harass:MenuElement({ id = "energy", name = "Keep energy above", value = 55,
 
 Menu:MenuElement({ type = MENU, id = "clear", name = "Clear" })
 Menu.clear:MenuElement({ id = "useQ", name = "Use Q", value = true })
-Menu.clear:MenuElement({ id = "qMin", name = "Q if units in range >=", value = 2, min = 1, max = 6, step = 1 })
+Menu.clear:MenuElement({ id = "qMin", name = "Q if it kills >=", value = 2, min = 1, max = 6, step = 1 })
+Menu.clear:MenuElement({ id = "push", name = "Q to push when nothing is killable", value = false })
+Menu.clear:MenuElement({ id = "pushMin", name = "Pushing: units in the cone >=", value = 3, min = 1, max = 6, step = 1 })
 Menu.clear:MenuElement({ id = "energy", name = "Keep energy above", value = 45, min = 0, max = 100, step = 5, identifier = "%" })
+
+Menu:MenuElement({ type = MENU, id = "lasthit", name = "Last Hit" })
+Menu.lasthit:MenuElement({ id = "useQ", name = "Q a minion Q would kill", value = true })
+Menu.lasthit:MenuElement({ id = "energy", name = "Keep energy above", value = 40, min = 0, max = 100, step = 5, identifier = "%" })
 
 Menu:MenuElement({ type = MENU, id = "ks", name = "Killsteal" })
 Menu.ks:MenuElement({ id = "useQ", name = "Q killsteal", value = true })
@@ -687,6 +693,83 @@ local function RunHarass()
     if node.useE1:Value() and CastE1(Target(E_RANGE, E_RANGE2)) then return end
 end
 
+local function HealthAfter(unit, delay)
+    local sdk = _G.SDK
+    local hp = sdk and sdk.HealthPrediction
+    if hp and hp.GetPrediction then
+        local ok, v = pcall(hp.GetPrediction, hp, unit, delay)
+        if ok and type(v) == "number" then return v end
+    end
+    return unit.health or 0
+end
+
+local function QRaw()
+    if S.qLv == 0 then return 0 end
+    return Q_BASE[S.qLv] + Q_AD * S.ad + Q_AP * S.ap
+end
+
+local function QKills(unit, raw)
+    local shield = unit.shieldAP or 0
+    -- health prediction walks the orbwalker's attack lists, so do not ask about
+    -- a minion that incoming damage could not bring into range in the cast time
+    if (unit.health or 0) + shield > raw * 2 then return false end
+    return HealthAfter(unit, Q_DELAY) + shield <= raw * MagicMul(unit.magicResist)
+end
+
+local FMo, FMx, FMz = {}, {}, {}
+local FMkill = {}
+local FMn, FMhigh = 0, 0
+
+local function FarmSnapshot()
+    local sdk = _G.SDK
+    local w = sdk and sdk.Snapshot
+    local n = 0
+    if w then
+        local raw = QRaw()
+        local sx, sz = S.x, S.z
+        local reach2 = Q_RANGE2
+        for pass = 1, 2 do
+            local src = (pass == 1 and w.jungle) or w.lane
+            local srcN = (pass == 1 and (w.jungleN or 0)) or (w.laneN or 0)
+            for i = 1, srcN do
+                local u = src[i]
+                if u and u.valid and u.visible and not u.dead and u.isTargetable and not u.isImmortal then
+                    local pp = u.pos
+                    if pp then
+                        local dx, dz = pp.x - sx, pp.z - sz
+                        if dx * dx + dz * dz <= reach2 then
+                            n = n + 1
+                            FMo[n] = u
+                            FMx[n], FMz[n] = pp.x, pp.z
+                            FMkill[n] = raw > 0 and QKills(u, raw) or false
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for i = n + 1, FMhigh do FMo[i] = nil end
+    FMhigh = n
+    FMn = n
+    return n
+end
+
+local function BestCluster(killsOnly)
+    local bx, bz, best = nil, nil, 0
+    for i = 1, FMn do
+        local px, pz = FMx[i], FMz[i]
+        local c = 0
+        for j = 1, FMn do
+            if not killsOnly or FMkill[j] then
+                local ex, ez = FMx[j] - px, FMz[j] - pz
+                if ex * ex + ez * ez <= Q_CLUSTER2 then c = c + 1 end
+            end
+        end
+        if c > best then bx, bz, best = px, pz, c end
+    end
+    return bx, bz, best
+end
+
 local function RunClear()
     local node = Menu.clear
     if not node.useQ:Value() then return end
@@ -695,44 +778,42 @@ local function RunClear()
         return
     end
     if not S.qR or S.casting or SentTick[SQ] == TICK then return end
+    if FarmSnapshot() == 0 then return end
 
-    local sdk = _G.SDK
-    local w = sdk and sdk.Snapshot
-    if not w then return end
-
-    local need = node.qMin:Value()
-    local sx, sz = S.x, S.z
-    local bx, bz, best = nil, nil, 0
-
-    for pass = 1, 2 do
-        local src = (pass == 1 and w.jungle) or w.lane
-        local srcN = (pass == 1 and (w.jungleN or 0)) or (w.laneN or 0)
-        for i = 1, srcN do
-            local u = src[i]
-            if u and u.valid and u.visible and not u.dead and not u.isImmortal then
-                local p = u.pos
-                if p then
-                    local dx, dz = p.x - sx, p.z - sz
-                    if dx * dx + dz * dz <= Q_RANGE2 then
-                        local c = 0
-                        for j = 1, srcN do
-                            local v = src[j]
-                            local q = v and v.pos
-                            if q then
-                                local ex, ez = q.x - p.x, q.z - p.z
-                                if ex * ex + ez * ez <= Q_CLUSTER2 then c = c + 1 end
-                            end
-                        end
-                        if c > best then bx, bz, best = p.x, p.z, c end
-                    end
-                end
-            end
-        end
-        if best >= need then break end
+    local bx, bz, kills = BestCluster(true)
+    if bx and kills >= node.qMin:Value() then
+        CastQAt(bx, bz)
+        return
     end
 
-    if not bx or best < need then return end
-    CastQAt(bx, bz)
+    if not node.push:Value() then
+        S.why = "no kill"
+        return
+    end
+    local px, pz, count = BestCluster(false)
+    if px and count >= node.pushMin:Value() then
+        CastQAt(px, pz)
+        return
+    end
+    S.why = "no kill"
+end
+
+local function RunLastHit()
+    local node = Menu.lasthit
+    if not node.useQ:Value() then return end
+    if S.energy < node.energy:Value() then
+        S.why = "energy"
+        return
+    end
+    if not S.qR or S.casting or SentTick[SQ] == TICK then return end
+    if FarmSnapshot() == 0 then return end
+
+    local bx, bz, kills = BestCluster(true)
+    if bx and kills >= 1 then
+        CastQAt(bx, bz)
+        return
+    end
+    S.why = "no kill"
 end
 
 local PC = {
@@ -855,6 +936,8 @@ local function OnTick()
         RunHarass()
     elseif mode == 3 then
         RunClear()
+    elseif mode == 4 then
+        RunLastHit()
     end
 end
 
