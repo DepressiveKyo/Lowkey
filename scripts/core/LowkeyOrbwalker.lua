@@ -12,6 +12,7 @@ local HUGE = math.huge
 local PI = math.pi
 local sqrt = math.sqrt
 local floor = math.floor
+local Ticks = GetTickCount
 local format = string.format
 local concat = table.concat
 local ceil = math.ceil
@@ -353,7 +354,7 @@ local PROF_KEYS = { "world", "select", "farm", "champT", "input", "walk", "ownD"
 local PROF_N = 8
 local PROF_COUNTS = { "enemies", "lane", "jungle", "farm", "min", "tur", "ward", "hero" }
 local PROF_CN = 8
-local Prof = { frames = 0, text = "profile warming up", samples = 0, sum = {}, labels = {} }
+local Prof = { frames = 0, wallAt = 0, text = "profile warming up", samples = 0, sum = {}, labels = {} }
 for i = 1, PROF_CN do Prof.sum[i] = 0 end
 for i = 1, PROF_N do Prof[PROF_KEYS[i]] = 0 end
 
@@ -394,7 +395,11 @@ local function ProfRoll()
         parts[i] = format("%s %.2f", key, ms)
         Prof[key] = 0
     end
-    Prof.text = format("frame %.2fms | %s", total, concat(parts, "  "))
+    local stamp = Ticks()
+    local wall = 0
+    if Prof.wallAt > 0 then wall = (stamp - Prof.wallAt) / Prof.frames end
+    Prof.wallAt = stamp
+    Prof.text = format("wall %.2fms cpu %.2fms | %s", wall, total, concat(parts, "  "))
 
     local samples = Prof.samples
     local sum = Prof.sum
