@@ -285,7 +285,7 @@ local function BuildMenu()
 
     root:MenuElement({ id = "farm", name = "Farming", type = MENU })
     Menu.farm = root.farm
-    root.farm:MenuElement({ id = "delay", name = "Farm delay [ms]", value = 0, min = -80, max = 80, step = 5 })
+    root.farm:MenuElement({ id = "farmDelay", name = "Farm delay [ms]", value = 30, min = -80, max = 80, step = 5 })
     root.farm:MenuElement({ id = "lastHitFirst", name = "Last hit before harass", value = true })
     root.farm:MenuElement({ id = "clearHeroes", name = "Hit heroes while clearing", value = true })
     root.farm:MenuElement({ id = "harassFarm", name = "Farm in harass mode", value = true })
@@ -1827,7 +1827,7 @@ function Farm:Refresh()
         local windup = Timing:Windup()
         local anim = Timing:Animation()
         local speed = Timing:ProjectileSpeed()
-        local base = windup + Net.half - Menu.farm.delay:Value() * 0.001
+        local base = windup + Net.half - Menu.farm.farmDelay:Value() * 0.001
         local slack = (1.5 - anim) * 0.3
         if slack < 0 then slack = 0 end
 
