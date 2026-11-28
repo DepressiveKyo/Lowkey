@@ -140,7 +140,8 @@ Menu.ult:MenuElement({ id = "r2Lethal", name = "R2 only when it kills", value = 
 Menu:MenuElement({ type = MENU, id = "shroud", name = "W Twilight Shroud" })
 Menu.shroud:MenuElement({ id = "key", name = "Cast at my feet", key = string.byte("G") })
 Menu.shroud:MenuElement({ id = "auto", name = "Auto shroud", value = true })
-Menu.shroud:MenuElement({ id = "energy", name = "Below energy% with an enemy near", value = 20, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.shroud:MenuElement({ id = "energy", name = "Below energy%", value = 50, min = 0, max = 100, step = 5, identifier = "%" })
+Menu.shroud:MenuElement({ id = "energyNear", name = "Energy shroud needs an enemy near", value = true })
 Menu.shroud:MenuElement({ id = "hp", name = "Below my HP% with an enemy near", value = 35, min = 0, max = 100, step = 5, identifier = "%" })
 Menu.shroud:MenuElement({ id = "count", name = "Enemies within 500 >=", value = 3, min = 1, max = 5, step = 1 })
 
@@ -229,7 +230,8 @@ local function InitPred()
     end
     PredE = gg:SpellPrediction({
         Type = gg.SPELLTYPE_LINE, Delay = E_DELAY, Radius = E_RADIUS,
-        Range = E_RANGE, Speed = E_SPEED, Collision = false,
+        Range = E_RANGE, Speed = E_SPEED, Collision = true, MaxCollision = 0,
+        CollisionTypes = { gg.COLLISION_MINION, gg.COLLISION_YASUOWALL },
     })
     PredQ = gg:SpellPrediction({
         Type = gg.SPELLTYPE_LINE, Delay = Q_DELAY, Radius = Q_RADIUS,
@@ -599,14 +601,18 @@ local function RunShroud()
     if not S.wR or S.shrouded or S.casting or SentTick[SW] == TICK then return false end
 
     local near = NearCount(Q_RANGE2)
+
+    if S.energy <= Menu.shroud.energy:Value() then
+        if near > 0 or not Menu.shroud.energyNear:Value() then
+            S.why = "shroud energy"
+            return Send(HK_W, SW, S.x, S.z)
+        end
+    end
+
     if near == 0 then return false end
 
     if near >= Menu.shroud.count:Value() then
         S.why = "shroud crowd"
-        return Send(HK_W, SW, S.x, S.z)
-    end
-    if S.energy <= Menu.shroud.energy:Value() then
-        S.why = "shroud energy"
         return Send(HK_W, SW, S.x, S.z)
     end
     if S.hpPct <= Menu.shroud.hp:Value() then
