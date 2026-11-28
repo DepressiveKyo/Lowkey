@@ -716,8 +716,6 @@ end
 
 local function QKills(unit, raw)
     local shield = unit.shieldAP or 0
-    -- health prediction walks the orbwalker's attack lists, so do not ask about
-    -- a minion that incoming damage could not bring into range in the cast time
     if (unit.health or 0) + shield > raw * 2 then return false end
     return HealthAfter(unit, Q_DELAY) + shield <= raw * MagicMul(unit.magicResist)
 end

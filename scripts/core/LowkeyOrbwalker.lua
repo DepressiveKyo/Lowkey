@@ -1652,8 +1652,10 @@ function Farm:Predict(target, horizon)
         if m.valid and m.visible and not m.dead then
             local ad = m.attackData
             if ad then
-                local committed = ad.target == handle and ad.endTime and ad.endTime > now
-                if not committed then
+                local aimed = ad.target
+                local busy = ad.endTime ~= nil and ad.endTime > now
+                local elsewhere = aimed ~= nil and aimed ~= 0 and aimed ~= handle
+                if not busy and not elsewhere then
                     local anim = ad.animationTime or 0
                     if anim > 0.05 then
                         local range = AttackRange(m, target)
