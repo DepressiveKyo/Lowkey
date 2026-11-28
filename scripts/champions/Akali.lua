@@ -2,7 +2,7 @@ if _G.__LOWKEY_AKALI_LOADED then return end
 _G.__LOWKEY_AKALI_LOADED = true
 if myHero.charName ~= "Akali" then return end
 
-local VERSION = "1.0"
+local VERSION = "1.3"
 local SCRIPT_NAME = "Lowkey Akali"
 
 local PredTries = 0
@@ -83,6 +83,7 @@ local TICK = 0
 local S = {
     x = 0, y = 0, z = 0,
     ad = 0, bonusAd = 0, ap = 0,
+    penPct = 1, penFlat = 0,
     hpPct = 100, energy = 100,
     qLv = 0, wLv = 0, eLv = 0, rLv = 0,
     qCd = 0, wCd = 0, eCd = 0, rCd = 0,
@@ -177,10 +178,10 @@ Menu.draw:MenuElement({ id = "marks", name = "Mark E-marked enemies", value = tr
 
 local function MagicMul(mr)
     local v = mr or 0
-    local pct = myHero.magicPenPercent
-    if pct and pct > 0 then v = v * pct end
-    local flat = myHero.magicPen
-    if flat and flat > 0 then v = v - flat end
+    local pct = S.penPct
+    if pct > 0 then v = v * pct end
+    local flat = S.penFlat
+    if flat > 0 then v = v - flat end
     if v >= 0 then return 100 / (100 + v) end
     return 2 - 100 / (100 - v)
 end
@@ -267,6 +268,10 @@ local function SyncSelf()
     S.ad = myHero.totalDamage or 0
     S.bonusAd = math_max(0, S.ad - (myHero.baseDamage or 0))
     S.ap = myHero.ap or 0
+    local pct = myHero.magicPenPercent
+    S.penPct = (type(pct) == "number" and pct > 0 and pct) or 1
+    local flat = myHero.magicPen
+    S.penFlat = (type(flat) == "number" and flat > 0 and flat) or 0
 
     local mh = myHero.maxHealth
     S.hpPct = (mh and mh > 0 and myHero.health / mh * 100) or 100
@@ -329,10 +334,11 @@ local function SyncEnemies()
             EHo[n] = h
             EHx[n], EHz[n] = px, pz
             EHd2[n] = d2
-            EHhp[n] = h.health + (h.shieldAP or 0)
+            local hp = h.health
+            EHhp[n] = hp + (h.shieldAP or 0)
             EHmr[n] = h.magicResist
             local mh = h.maxHealth
-            EHhpP[n] = (mh and mh > 0 and h.health / mh * 100) or 100
+            EHhpP[n] = (mh and mh > 0 and hp / mh * 100) or 100
 
             local mark = false
             if wantMark and d2 <= R2_RANGE2 then
@@ -724,6 +730,8 @@ local FMo, FMx, FMz = {}, {}, {}
 local FMkill = {}
 local FMn, FMhigh = 0, 0
 
+local FarmByDist = nil
+
 local function FarmSnapshot()
     local sdk = _G.SDK
     local w = sdk and sdk.Snapshot
@@ -737,14 +745,32 @@ local function FarmSnapshot()
             local srcN = (pass == 1 and (w.jungleN or 0)) or (w.laneN or 0)
             for i = 1, srcN do
                 local u = src[i]
-                if u and u.valid and u.visible and not u.dead and u.isTargetable and not u.isImmortal then
-                    local pp = u.pos
-                    if pp then
-                        local dx, dz = pp.x - sx, pp.z - sz
-                        if dx * dx + dz * dz <= reach2 then
+                if u then
+                    if FarmByDist == nil then
+                        FarmByDist = type(u.distance) == "number"
+                    end
+                    local near, px, pz
+                    if FarmByDist then
+                        local d = u.distance
+                        near = d ~= nil and d <= Q_RANGE
+                    else
+                        local pp = u.pos
+                        if pp then
+                            px, pz = pp.x, pp.z
+                            local dx, dz = px - sx, pz - sz
+                            near = dx * dx + dz * dz <= reach2
+                        end
+                    end
+                    if near and u.valid and u.visible and not u.dead
+                        and u.isTargetable and not u.isImmortal then
+                        if px == nil then
+                            local pp = u.pos
+                            if pp then px, pz = pp.x, pp.z end
+                        end
+                        if px then
                             n = n + 1
                             FMo[n] = u
-                            FMx[n], FMz[n] = pp.x, pp.z
+                            FMx[n], FMz[n] = px, pz
                             FMkill[n] = raw > 0 and QKills(u, raw) or false
                         end
                     end
@@ -825,6 +851,7 @@ local PC = {
     cdText = { "Q", "W", "E", "R" },
     cdReady = { false, false, false, false },
     lastCd = {}, lastLv = {},
+    tag = "", tagE2 = nil, tagR2 = nil, tagWhy = nil,
 }
 
 local function PanelCell(i, cd, ready, lv)
@@ -875,16 +902,17 @@ local function DrawPanel()
         Draw.Rect(x, y, 300, 2, COL_BORD)
     end
 
-    local tag = ""
-    if S.hasE2 then tag = "E2" end
-    if S.hasR2 then
-        tag = (tag ~= "" and tag .. " R2") or "R2"
+    local e2, r2, why = S.hasE2, S.hasR2, S.why
+    if PC.tagE2 ~= e2 or PC.tagR2 ~= r2 or PC.tagWhy ~= why then
+        PC.tagE2, PC.tagR2, PC.tagWhy = e2, r2, why
+        local t = ""
+        if e2 then t = "E2" end
+        if r2 then t = (t ~= "" and t .. " R2") or "R2" end
+        if why ~= "" then t = (t ~= "" and t .. " " .. why) or why end
+        PC.tag = t
     end
-    if S.why ~= "" then
-        tag = (tag ~= "" and tag .. " " .. S.why) or S.why
-    end
-    if tag ~= "" then
-        DrawText(tag, 12, x + 10, y + 8, (S.hasE2 or S.hasR2) and COL_MARK or COL_OFF)
+    if PC.tag ~= "" then
+        DrawText(PC.tag, 12, x + 10, y + 8, (e2 or r2) and COL_MARK or COL_OFF)
     end
 
     for i = 1, 4 do
@@ -896,14 +924,19 @@ local function OnDraw()
     local draw = Menu.draw
     if myHero.dead or not draw.enable:Value() then return end
     if draw.panel:Value() then DrawPanel() end
+    local q, e, r = draw.qRange:Value(), draw.eRange:Value(), draw.rRange:Value()
+    local marks = draw.marks:Value()
+    if not (q or e or r or marks) then return end
     if not myHero.visible then return end
-    local pos = myHero.pos
 
-    if draw.qRange:Value() then DrawCircle(pos, Q_RANGE, 1, COL_Q) end
-    if draw.eRange:Value() then DrawCircle(pos, E_RANGE, 1, COL_E) end
-    if draw.rRange:Value() then DrawCircle(pos, R1_RANGE, 1, COL_R) end
+    if q or e or r then
+        local pos = myHero.pos
+        if q then DrawCircle(pos, Q_RANGE, 1, COL_Q) end
+        if e then DrawCircle(pos, E_RANGE, 1, COL_E) end
+        if r then DrawCircle(pos, R1_RANGE, 1, COL_R) end
+    end
 
-    if draw.marks:Value() then
+    if marks then
         for i = 1, EHn do
             if EHmark[i] then
                 local u = EHo[i]
