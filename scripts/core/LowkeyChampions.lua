@@ -858,12 +858,23 @@ Objects:OnEnemyHeroLoad(function(args)
     end
 end)
 
-H.Untargetable = function(unit)
-    if not Menu.undying:Value() then return false end
-    return Untargetable(unit)
+local function ArmUndying()
+    if H.Untargetable then return end
+    H.Untargetable = function(unit)
+        if not Menu.undying:Value() then return false end
+        return Untargetable(unit)
+    end
+    print("[" .. __name__ .. "] undying armed")
 end
 
-Note("undying")
+Objects:OnEnemyHeroLoad(function(args)
+    local name = args.charName
+    if not name then return end
+    if UNDYING_ALWAYS[name] or UNDYING_LOW_HP[name] or UNDYING_ON_ATTACK[name]
+        or name == "Gwen" or name == "Jade_Gwen" then
+        ArmUndying()
+    end
+end)
 
 H.PriorityTarget = function(modes)
     if wantBarrel and Menu.barrel:Value() then
