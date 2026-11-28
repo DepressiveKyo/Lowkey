@@ -150,6 +150,7 @@ function LowkeySmite:LoadMenu()
     self.Menu.rules:MenuElement({ id = "ignoreChat", name = "Block while chat is open", value = true })
 
     self.Menu:MenuElement({ type = MENU, id = "draw", name = "Draw" })
+    self.Menu.draw:MenuElement({ id = "shown", name = "Draw anything at all", value = false })
     self.Menu.draw:MenuElement({ id = "range", name = "Smite range", value = true })
     self.Menu.draw:MenuElement({ id = "targets", name = "Monster health vs Smite", value = true })
     self.Menu.draw:MenuElement({ id = "status", name = "Smite status", value = true })
@@ -374,6 +375,7 @@ end
 
 function LowkeySmite:Draw()
     if myHero.dead then return end
+    if not self.Menu.draw.shown:Value() then return end
     local state = self.state
     if not state.slot then return end
 

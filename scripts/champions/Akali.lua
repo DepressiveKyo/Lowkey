@@ -170,6 +170,7 @@ Menu.ks:MenuElement({ id = "useR2", name = "R2 killsteal", value = true })
 
 Menu:MenuElement({ type = MENU, id = "draw", name = "Drawings" })
 Menu.draw:MenuElement({ id = "enable", name = "Enable drawings", value = true })
+Menu.draw:MenuElement({ id = "shown", name = "Draw anything at all", value = false })
 Menu.draw:MenuElement({ id = "panel", name = "Status panel", value = true })
 Menu.draw:MenuElement({ id = "qRange", name = "Q range", value = true })
 Menu.draw:MenuElement({ id = "eRange", name = "E range", value = true })
@@ -923,6 +924,7 @@ end
 local function OnDraw()
     local draw = Menu.draw
     if myHero.dead or not draw.enable:Value() then return end
+    if not draw.shown:Value() then return end
     if draw.panel:Value() then DrawPanel() end
     local q, e, r = draw.qRange:Value(), draw.eRange:Value(), draw.rRange:Value()
     local marks = draw.marks:Value()

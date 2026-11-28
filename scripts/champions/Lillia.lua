@@ -149,6 +149,7 @@ Menu.ks:MenuElement({ id = "useE", name = "Use E", value = true })
 
 Menu:MenuElement({ type = MENU, id = "draw", name = "Drawings" })
 Menu.draw:MenuElement({ id = "enable", name = "Enable drawings", value = true })
+Menu.draw:MenuElement({ id = "shown", name = "Draw anything at all", value = false })
 Menu.draw:MenuElement({ id = "panel", name = "Status panel", value = true })
 Menu.draw:MenuElement({ id = "qBand", name = "Q edge band", value = true })
 Menu.draw:MenuElement({ id = "wRange", name = "W range", value = false })
@@ -672,6 +673,7 @@ end
 local function OnDraw()
     local node = Menu.draw
     if myHero.dead or not node.enable:Value() then return end
+    if not node.shown:Value() then return end
     if node.panel:Value() then DrawPanel() end
     if not myHero.visible then return end
     local pos = myHero.pos

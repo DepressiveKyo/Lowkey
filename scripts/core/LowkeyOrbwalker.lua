@@ -319,6 +319,8 @@ local function BuildMenu()
     root.draws:MenuElement({ id = "profile", name = "Frame cost (ms per section)", value = false })
     root.draws:MenuElement({ id = "errors", name = "Script errors", value = true })
     root.draws:MenuElement({ id = "units", name = "Per-unit markers (costs frames)", value = false })
+    root.draws:MenuElement({ id = "shown", name = "Draw anything at all", value = false })
+    root.draws:MenuElement({ id = "foeRange", name = "Enemy attack range", value = true })
 
     root:MenuElement({ name = "", type = SPACE, id = "gap" })
     root:MenuElement({
@@ -2499,17 +2501,18 @@ function Walker:OnDraw()
     local pos = myHero.pos
     if not pos then return end
 
-    if d.range:Value() then
+    local shown = d.shown:Value()
+    if shown and d.range:Value() then
         Draw.Circle(pos, MyAttackRange(nil), 1, Palette.range)
     end
-    if d.hold:Value() then
+    if shown and d.hold:Value() then
         Draw.Circle(pos, Menu.walk.hold:Value(), 1, Palette.hold)
     end
-    if d.cursor:Value() then
+    if shown and d.cursor:Value() then
         Draw.Circle(MousePos(), 120, 1, Palette.cursor)
     end
     local units = d.units:Value()
-    if units and d.enemyRange:Value() then
+    if d.foeRange:Value() then
         local mx, mz = pos.x, pos.z
         for i = 1, World.enemyN do
             local u = World.enemy[i]
@@ -2524,13 +2527,13 @@ function Walker:OnDraw()
             end
         end
     end
-    if d.selected:Value() then
+    if shown and d.selected:Value() then
         local c = Selector.clicked
         if Alive(c) and c.pos then
             Draw.Circle(c.pos, 140, 2, Palette.selected)
         end
     end
-    if units and d.farm:Value() then
+    if shown and units and d.farm:Value() then
         for i = 1, Farm.minionN do
             local kill = Farm.killable[i]
             local near = kill or Farm.nearly[i]
@@ -2547,7 +2550,7 @@ function Walker:OnDraw()
             end
         end
     end
-    if d.mode:Value() then
+    if shown and d.mode:Value() then
         local sw, sh = Screen()
         if sw > 0 then
             local label = "idle"

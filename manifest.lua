@@ -1,14 +1,14 @@
 return {
     api = 1,
-    version = "2026.11.28.1420",
+    version = "2026.11.28.1428",
     scripts = {
-        ["Akali"] = { file = "scripts/champions/Akali.lua", bytes = 32553, sha256 = "510842605fab0d95cc4f6b8b9dabf0c9c64762004c2c48b05ee627b2c6500695", champion = "Akali" },
-        ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 27709, sha256 = "5098be045d0f33e1f9f6ddad56b399e80572c2da0bc8acbbf149c370a08f31f6", champion = "Draven" },
-        ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24219, sha256 = "e91b101841a92720940dbfd41286358346250da57e45b5d98284b2bc5e497871", champion = "Lillia" },
+        ["Akali"] = { file = "scripts/champions/Akali.lua", bytes = 32685, sha256 = "11a23898877c57ff4d90d47e3cfb75f85227aa4c2f7b04af82aa7b13dc9d7d7b", champion = "Akali" },
+        ["Draven"] = { file = "scripts/champions/Draven.lua", bytes = 27841, sha256 = "adcc5954eb007bb2a8694cac91682f715bf8919144b6dbd5cb41a778458f89a9", champion = "Draven" },
+        ["Lillia"] = { file = "scripts/champions/Lillia.lua", bytes = 24351, sha256 = "78ba1ed79882aa10544351bc1cb33dc1d0b1fd9d114a9ce67d6a39438898fd52", champion = "Lillia" },
         ["LowkeyChampions"] = { file = "scripts/core/LowkeyChampions.lua", bytes = 27361, sha256 = "5f9280092af808452caca394ad925930eed2f69d574d4e18944cf37d0f9d0267", order = 20 },
-        ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 88328, sha256 = "0fc4ee1878cdcdae708fc1ddeca5a932f643588609fca2e1f16727a039cec963", order = 10 },
-        ["LowkeySmite"] = { file = "scripts/core/LowkeySmite.lua", bytes = 16174, sha256 = "3b99c92a7900316124b17465b63b195ada0acf02ddbd54af1f70f61f811b97e0", order = 10 },
-        ["Thresh"] = { file = "scripts/champions/Thresh.lua", bytes = 26839, sha256 = "956e2f733050cc710aa82ad08d06b1fe1bf49a94d582bc63d3192341ba520a48", champion = "Thresh" },
-        ["Yasuo"] = { file = "scripts/champions/Yasuo.lua", bytes = 44950, sha256 = "3c0976302d299e990eecf1aa43b31e8845025dc4d9f75e5d4074f761bda2daa0", champion = "Yasuo" },
+        ["LowkeyOrbwalker"] = { file = "scripts/core/LowkeyOrbwalker.lua", bytes = 88592, sha256 = "39a49c53fe3030f6320a08dea915badee5c05a75d32cb928406a8499da949749", order = 10 },
+        ["LowkeySmite"] = { file = "scripts/core/LowkeySmite.lua", bytes = 16325, sha256 = "28d90a83b3270950c87ab6901c9463e1bb9910936f20929f703e4d61235f8385", order = 10 },
+        ["Thresh"] = { file = "scripts/champions/Thresh.lua", bytes = 26971, sha256 = "7f0a888f09aa9c9985c14d83122674c0409caba68635c0a96bd55a8010a1b43c", champion = "Thresh" },
+        ["Yasuo"] = { file = "scripts/champions/Yasuo.lua", bytes = 45082, sha256 = "4d5771b5a6b39c9301e2a05e67a470ed4f1691c166558e53ae2ab860e2d19585", champion = "Yasuo" },
     },
 }
